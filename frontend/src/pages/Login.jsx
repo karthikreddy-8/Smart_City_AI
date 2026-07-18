@@ -18,27 +18,27 @@ const TrafficAnimation = () => (
 
 // ── Demo account quick-login ─────────────────────────────────────────────────
 const DEMO_ACCOUNTS = [
-  { label: 'Admin',   username: 'admin@smartcityai.com',   password: 'Admin@123',   color: 'from-rose-500 to-pink-500',      icon: <FaShieldAlt /> },
-  { label: 'Analyst', username: 'analyst@smartcityai.com', password: 'Analyst@123', color: 'from-primary-500 to-cyan-400',   icon: <FaChartLine /> },
-  { label: 'Guest',   username: 'guest@smartcityai.com',   password: 'Guest@123',   color: 'from-emerald-500 to-teal-400',   icon: <FaBolt /> },
+  { label: 'Admin', username: 'admin@smartcityai.com', password: 'Admin@123', color: 'from-rose-500 to-pink-500', icon: <FaShieldAlt /> },
+  { label: 'Analyst', username: 'analyst@smartcityai.com', password: 'Analyst@123', color: 'from-primary-500 to-cyan-400', icon: <FaChartLine /> },
+  { label: 'Guest', username: 'guest@smartcityai.com', password: 'Guest@123', color: 'from-emerald-500 to-teal-400', icon: <FaBolt /> },
 ];
 
 // Role → dashboard path mapping
 const ROLE_REDIRECT = {
-  'Admin':           '/dashboard',
+  'Admin': '/dashboard',
   'Traffic Analyst': '/dashboard',
-  'Guest':           '/dashboard',
+  'Guest': '/dashboard',
 };
 
 const Login = () => {
-  const [username,     setUsername]     = useState('');
-  const [password,     setPassword]     = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error,        setError]        = useState('');
-  const [loading,      setLoading]      = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const { login } = useAuth();
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
 
   // ── Submit handler ──────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
@@ -153,9 +153,9 @@ const Login = () => {
 
             <div className="space-y-3">
               {[
-                { road: 'NH-48 Highway',        level: 'High',     pct: '85%', color: 'bg-rose-500' },
-                { road: 'Ring Road Sector B',   level: 'Moderate', pct: '55%', color: 'bg-amber-500' },
-                { road: 'Inner City Route C',   level: 'Low',      pct: '22%', color: 'bg-emerald-500' },
+                { road: 'NH-48 Highway', level: 'High', pct: '85%', color: 'bg-rose-500' },
+                { road: 'Ring Road Sector B', level: 'Moderate', pct: '55%', color: 'bg-amber-500' },
+                { road: 'Inner City Route C', level: 'Low', pct: '22%', color: 'bg-emerald-500' },
               ].map((item, i) => (
                 <div key={i}>
                   <div className="flex justify-between text-xs mb-1.5">
@@ -175,8 +175,8 @@ const Login = () => {
             {/* Stats row */}
             <div className="grid grid-cols-3 gap-4 mt-5 pt-4 border-t border-slate-800">
               {[
-                { label: 'Vehicles',    value: '12,847' },
-                { label: 'Avg Speed',   value: '43 km/h' },
+                { label: 'Vehicles', value: '12,847' },
+                { label: 'Avg Speed', value: '43 km/h' },
                 { label: 'AI Accuracy', value: '94.2%' },
               ].map((s, i) => (
                 <div key={i} className="text-center">
