@@ -1,0 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* ── Tailwind v4 Custom Theme Tokens ──────────────────────────────────────── */
+@theme {
+  --color-primary-50: #f0f9ff;
+  --color-primary-100: #e0f2fe;
+  --color-primary-200: #bae6fd;
+  --color-primary-300: #7dd3fc;
+  --color-primary-400: #38bdf8;
+  --color-primary-500: #00b4d8;
+  --color-primary-600: #0096c7;
+  --color-primary-700: #0077b6;
+  --color-primary-800: #023e8a;
+  --color-primary-900: #03045e;
+
+  --color-darkBg-900: #0d1b2a;
+  --color-darkBg-800: #1b263b;
+  --color-darkBg-700: #415a77;
+
+  --font-family-sans: 'Outfit', 'Inter', sans-serif;
+}
+
+/* ── Base Styles ────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  transition: background-color 300ms ease, color 300ms ease;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Glassmorphism ───────────────────────────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.dark .glass {
+  background: rgba(13, 27, 42, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.dark .glass-card {
+  background: rgba(27, 38, 59, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────────── */
+@keyframes float {
+  0%   { transform: translateY(0px); }
+  50%  { transform: translateY(-12px); }
+  100% { transform: translateY(0px); }
+}
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pulse-ring {
+  0%   { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes traffic-flow {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(0, 180, 216, 0.3); }
+  50%       { box-shadow: 0 0 40px rgba(0, 180, 216, 0.6); }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: scale(0.5); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(100%); }
+}
+
+.animate-float       { animation: float 6s ease-in-out infinite; }
+.animate-gradient    { animation: gradient-shift 4s ease infinite; background-size: 200% 200%; }
+.animate-slide-up    { animation: slide-in-up 0.5s ease forwards; }
+.animate-slide-left  { animation: slide-in-left 0.5s ease forwards; }
+.animate-fade-in     { animation: fade-in 0.4s ease forwards; }
+.animate-glow        { animation: glow-pulse 2s ease-in-out infinite; }
+.animate-shimmer     { animation: shimmer 2s linear infinite; }
+.animate-count-up    { animation: count-up 0.6s ease forwards; }
+.animate-toast-in    { animation: toast-in 0.35s ease forwards; }
+.animate-toast-out   { animation: toast-out 0.35s ease forwards; }
+
+/* ── Skeleton Loading ────────────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.05) 25%,
+    rgba(255,255,255,0.12) 50%,
+    rgba(255,255,255,0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.5rem;
+}
+
+/* ── Password Strength Bar ─────────────────────────────────────────────────── */
+.strength-weak     { background: #f43f5e; width: 25%; }
+.strength-fair     { background: #f59e0b; width: 50%; }
+.strength-good     { background: #3b82f6; width: 75%; }
+.strength-strong   { background: #10b981; width: 100%; }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(0, 180, 216, 0.3); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 180, 216, 0.6); }
+
+/* ── Traffic Animation (Login Page) ─────────────────────────────────────────── */
+.traffic-car {
+  animation: traffic-flow 3s linear infinite;
+}
+.traffic-car-2 {
+  animation: traffic-flow 4.5s linear infinite;
+  animation-delay: 1.5s;
+}
+.traffic-car-3 {
+  animation: traffic-flow 6s linear infinite;
+  animation-delay: 0.7s;
+}
