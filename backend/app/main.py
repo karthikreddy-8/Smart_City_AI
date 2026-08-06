@@ -52,7 +52,7 @@ def seed_demo_accounts():
                 existing.username = account["username"]
                 existing.role     = account["role"]
                 existing.is_active = True
-                print(f"  ✅ Demo account updated: {account['email']} ({account['role']})")
+                print(f"[OK] Demo account updated: {account['email']} ({account['role']})")
             else:
                 new_user = User(
                     username=account["username"],
@@ -62,13 +62,13 @@ def seed_demo_accounts():
                     is_active=True
                 )
                 db.add(new_user)
-                print(f"  ✅ Demo account created: {account['email']} ({account['role']})")
+                print(f"[OK] Demo account created: {account['email']} ({account['role']})")
 
         db.commit()
-        print("SUCCESS: All demo accounts are ready.")
+        print("[SUCCESS] All demo accounts are ready.")
     except Exception as e:
         db.rollback()
-        print(f"ERROR: Demo account seeding failed: {e}")
+        print(f"[ERROR] Demo account seeding failed: {e}")
     finally:
         db.close()
 

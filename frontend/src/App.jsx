@@ -52,11 +52,11 @@ const AdminRoute = ({ children }) => {
 const AppLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white transition-colors overflow-hidden">
+    <div className="flex h-screen bg-slate-950 text-white transition-colors overflow-hidden font-sans">
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-      <div className="flex-1 flex flex-col overflow-hidden relative w-full">
+      <div className="flex-1 flex flex-col overflow-hidden relative w-full bg-slate-950">
         <Navbar toggleSidebar={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 w-full">
+        <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 w-full bg-slate-950/80">
           {children}
         </main>
       </div>

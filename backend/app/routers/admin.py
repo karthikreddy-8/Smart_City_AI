@@ -227,19 +227,18 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db), current_user:
 def background_train_models(db_session_factory, dataset_id: int = None):
     db = db_session_factory()
     try:
-        # Task 1: Check if models already exist. If so, skip training.
-        existing_models = db.query(ModelMetadata).count()
-        if existing_models > 0:
-            print("Models already trained and saved. Skipping retraining.")
-            return
-
+        # Fetch traffic records to train on
         query = db.query(TrafficRecord)
         if dataset_id:
             query = query.filter(TrafficRecord.dataset_id == dataset_id)
         records = query.all()
 
+        # If filtered query returns empty (e.g. specific dataset had no rows), fall back to all records
         if not records:
-            print("No records found for training.")
+            records = db.query(TrafficRecord).all()
+
+        if not records:
+            print("No records found in database for training.")
             return
 
         data = []
@@ -287,14 +286,22 @@ def background_train_models(db_session_factory, dataset_id: int = None):
             if first_model:
                 first_model.is_active = True
                 
+        # Update dataset record status if dataset_id provided
+        if dataset_id:
+            dataset_rec = db.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
+            if dataset_rec:
+                dataset_rec.status = "Trained & Active"
+        else:
+            db.query(DatasetRecord).update({DatasetRecord.status: "Trained & Active"})
+
         # If no models were trained (e.g. data issues), make sure we don't crash
         if not metrics:
             print("Warning: Training returned no metrics.")
 
         db.commit()
-        print("✅ Training background task completed successfully.")
+        print("[OK] Training background task completed successfully.")
     except Exception as e:
-        print(f"❌ Background Training Error: {e}")
+        print(f"[ERROR] Background Training Error: {e}")
     finally:
         db.close()
 

@@ -51,7 +51,7 @@ class PredictionInput(BaseModel):
     longitude: float
     road_type: str       # Highway, Arterial, Local
     vehicle_count: int
-    average_speed: float
+    average_speed: Optional[float] = 30.0
     weather: str         # Clear, Rainy, Snowy, Foggy
     temperature: float
     humidity: float
@@ -75,6 +75,40 @@ class PredictionResponse(BaseModel):
     accident_risk: str
     confidence: float
     recommendation: Recommendation
+
+# Point A to Point B Route Prediction Schemas
+class RoutePredictionInput(BaseModel):
+    origin_name: str
+    origin_lat: float
+    origin_lng: float
+    destination_name: str
+    destination_lat: float
+    destination_lng: float
+    travel_mode: Optional[str] = "Driving"
+    road_type: Optional[str] = "Arterial"
+    weather: Optional[str] = "Clear"
+
+class RouteStep(BaseModel):
+    step_number: int
+    instruction: str
+    distance_km: float
+    duration_mins: float
+    congestion_level: str
+
+class RoutePredictionResponse(BaseModel):
+    origin: str
+    destination: str
+    total_distance_km: float
+    estimated_travel_time_mins: float
+    average_speed_kmh: float
+    overall_congestion: str
+    accident_risk: str
+    confidence: float
+    alternative_route_name: str
+    fuel_saved_liters: float
+    co2_saved_kg: float
+    steps: List[RouteStep]
+    route_coordinates: List[List[float]]  # List of [lat, lng] points
 
 # Model comparisons
 class ModelComparison(BaseModel):

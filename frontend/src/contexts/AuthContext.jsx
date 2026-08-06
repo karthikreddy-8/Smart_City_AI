@@ -4,11 +4,22 @@ import axios from 'axios';
 const AuthContext = createContext();
 
 // ── API Base URL ──────────────────────────────────────────────────────────────
-// Uses Vite proxy in development (relative path) or env variable in production
-export const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+// Uses Vite proxy in development (relative path /api) or env variable in production
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (import.meta.env.DEV) {
+    if (envUrl && (envUrl.startsWith('/') || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+      return envUrl;
+    }
+    return '/api';
+  }
+  return envUrl || '/api';
+};
+
+export const API_URL = getApiUrl();
 
 // ── Axios instance with auth header injection ────────────────────────────────
-const api = axios.create({ baseURL: API_URL });
+export const api = axios.create({ baseURL: API_URL });
 
 // Automatically attach Bearer token to every request if present
 api.interceptors.request.use((config) => {
@@ -55,6 +66,7 @@ export const AuthProvider = ({ children }) => {
     const savedToken = localStorage.getItem('token');
     if (savedToken) {
       setToken(savedToken);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
       fetchProfile(savedToken).finally(() => setLoading(false));
     } else {
       setLoading(false);

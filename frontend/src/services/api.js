@@ -1,33 +1,36 @@
-import axios from 'axios';
-import { API_URL } from '../contexts/AuthContext';
+import { api, API_URL } from '../contexts/AuthContext';
 
 export const analyticsAPI = {
-  getKPIs: (params = {}) => axios.get(`${API_URL}/analytics/kpis`, { params }),
-  getCharts: (params = {}) => axios.get(`${API_URL}/analytics/charts`, { params }),
-  getMapMarkers: () => axios.get(`${API_URL}/analytics/map-markers`),
-  getFilters: () => axios.get(`${API_URL}/analytics/filters`),
-  getAreaAnalytics: (params) => axios.get(`${API_URL}/analytics/area`, { params })
+  getKPIs: (params = {}) => api.get('/analytics/kpis', { params }),
+  getCharts: (params = {}) => api.get('/analytics/charts', { params }),
+  getMapMarkers: () => api.get('/analytics/map-markers'),
+  getFilters: () => api.get('/analytics/filters'),
+  getAreaAnalytics: (params) => api.get('/analytics/area', { params })
 };
 
 export const adminAPI = {
-  getUsers: () => axios.get(`${API_URL}/admin/users`),
-  getDatasets: () => axios.get(`${API_URL}/admin/datasets`),
-  uploadCSV: (formData) => axios.post(`${API_URL}/admin/upload-csv`, formData, {
+  getUsers: () => api.get('/admin/users'),
+  getDatasets: () => api.get('/admin/datasets'),
+  uploadCSV: (formData) => api.post('/admin/upload-csv', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
-  deleteDataset: (id) => axios.delete(`${API_URL}/admin/datasets/${id}`),
+  deleteDataset: (id) => api.delete(`/admin/datasets/${id}`),
   trainModels: (datasetId = null) => {
-    const url = datasetId ? `${API_URL}/admin/train?dataset_id=${datasetId}` : `${API_URL}/admin/train`;
-    return axios.post(url);
+    const url = datasetId ? `/admin/train?dataset_id=${datasetId}` : '/admin/train';
+    return api.post(url);
   },
-  getModels: () => axios.get(`${API_URL}/admin/models`),
-  activateModel: (id) => axios.post(`${API_URL}/admin/models/${id}/activate`)
+  getModels: () => api.get('/admin/models'),
+  activateModel: (id) => api.post(`/admin/models/${id}/activate`)
 };
 
 export const predictionAPI = {
   predict: (inputData, modelName = null) => {
-    const url = modelName ? `${API_URL}/predict?model_name=${modelName}` : `${API_URL}/predict`;
-    return axios.post(url, inputData);
+    const url = modelName ? `/predict?model_name=${modelName}` : '/predict';
+    return api.post(url, inputData);
+  },
+  predictRoute: (routeData, modelName = null) => {
+    const url = modelName ? `/predict/route?model_name=${modelName}` : '/predict/route';
+    return api.post(url, routeData);
   }
 };
 
@@ -36,3 +39,4 @@ export const reportsAPI = {
   getExcelUrl: () => `${API_URL}/reports/excel?token=${localStorage.getItem('token')}`,
   getPDFUrl: () => `${API_URL}/reports/pdf?token=${localStorage.getItem('token')}`
 };
+

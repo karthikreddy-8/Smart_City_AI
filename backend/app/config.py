@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "smartcity_ai.db").replace("\\", "/")
+
 class Settings:
     PROJECT_NAME: str = "SmartCity AI"
     API_V1_STR: str = "/api"
@@ -13,7 +16,7 @@ class Settings:
     # DB Configuration: fall back to sqlite locally if DATABASE_URL is not set
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", 
-        "sqlite:///./smartcity_ai.db"
+        f"sqlite:///{DEFAULT_DB_PATH}"
     )
     
     # Models storage

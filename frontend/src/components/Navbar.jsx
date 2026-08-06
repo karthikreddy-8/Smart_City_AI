@@ -30,15 +30,15 @@ const Navbar = ({ toggleSidebar }) => {
   }, []);
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-10 sticky top-0">
+    <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-10 sticky top-0">
       <div className="flex items-center gap-4">
         <button 
           onClick={toggleSidebar} 
-          className="md:hidden text-slate-600 dark:text-slate-300 p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
+          className="md:hidden text-slate-300 p-2 hover:bg-slate-800 rounded-xl transition-colors"
         >
           <FaBars size={20} />
         </button>
-        <h2 className="text-lg md:text-xl font-bold text-slate-800 dark:text-white transition-colors truncate max-w-[200px] md:max-w-none">
+        <h2 className="text-lg md:text-xl font-bold text-white transition-colors truncate max-w-[200px] md:max-w-none">
           {getPageTitle()}
         </h2>
       </div>
