@@ -63,3 +63,50 @@ class ModelMetadata(Base):
     f1_score = Column(Float, nullable=True)
     is_active = Column(Boolean, default=False)
     trained_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class LiveTrafficSnapshot(Base):
+    __tablename__ = "live_traffic_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    camera_id = Column(String, index=True, nullable=False)
+    camera_name = Column(String, nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    car_count = Column(Integer, default=0)
+    bus_count = Column(Integer, default=0)
+    truck_count = Column(Integer, default=0)
+    motorcycle_count = Column(Integer, default=0)
+    bicycle_count = Column(Integer, default=0)
+    emergency_count = Column(Integer, default=0)
+    total_vehicles = Column(Integer, default=0)
+    congestion_percentage = Column(Float, default=0.0)
+    traffic_density_level = Column(String, default="Low")  # Low, Medium, High, Very High
+    average_speed_kmh = Column(Float, default=45.0)
+    expected_waiting_time_mins = Column(Float, default=2.0)
+    accident_detected = Column(Boolean, default=False)
+    road_blockage_status = Column(String, default="Road Open")  # Road Open, Partial Block, Road Closed
+    emergency_vehicle_detected = Column(Boolean, default=False)
+    weather_condition = Column(String, default="Clear")
+    temperature_c = Column(Float, default=28.0)
+
+
+class TrafficCamera(Base):
+    __tablename__ = "traffic_cameras"
+
+    camera_id = Column(String, primary_key=True, index=True)
+    camera_name = Column(String, nullable=False)
+    road_name = Column(String, nullable=False)
+    area = Column(String, nullable=False)
+    city = Column(String, nullable=False)
+    district = Column(String, nullable=True)
+    state = Column(String, nullable=False)
+    country = Column(String, default="India")
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    camera_type = Column(String, default="RTSP")  # RTSP, HTTP, MJPEG, IP Camera, USB Camera
+    stream_url = Column(String, nullable=True)
+    status = Column(String, default="ONLINE")  # ONLINE, OFFLINE
+    last_updated = Column(DateTime, default=datetime.datetime.utcnow)
+
+

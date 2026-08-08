@@ -5,7 +5,7 @@ from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.models import User
 from app.auth import get_password_hash
-from app.routers import auth, admin, predict, analytics, reports
+from app.routers import auth, admin, predict, analytics, reports, live_traffic
 
 # ── Create all DB tables ───────────────────────────────────────────────────────
 Base.metadata.create_all(bind=engine)
@@ -72,7 +72,20 @@ def seed_demo_accounts():
     finally:
         db.close()
 
+def seed_cameras():
+    """Seed initial traffic cameras into database table."""
+    db = SessionLocal()
+    try:
+        from app.services.camera_service import seed_traffic_cameras
+        seed_traffic_cameras(db)
+    except Exception as e:
+        print(f"[ERROR] Camera database seeding failed: {e}")
+    finally:
+        db.close()
+
 seed_demo_accounts()
+seed_cameras()
+
 # ──────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -85,32 +98,30 @@ app = FastAPI(
 
 # ── CORS ───────────────────────────────────────────────────────────────────────
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
-if cors_origins_env:
+if cors_origins_env and cors_origins_env != "*":
     cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 else:
-    cors_origins = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-        "https://smart-city-ai-jade.vercel.app",
-    ]
+    cors_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Register all API routers
-app.include_router(auth.router,      prefix=settings.API_V1_STR)
-app.include_router(admin.router,     prefix=settings.API_V1_STR)
-app.include_router(predict.router,   prefix=settings.API_V1_STR)
-app.include_router(analytics.router, prefix=settings.API_V1_STR)
-app.include_router(reports.router,   prefix=settings.API_V1_STR)
+app.include_router(auth.router,         prefix=settings.API_V1_STR)
+app.include_router(admin.router,        prefix=settings.API_V1_STR)
+app.include_router(predict.router,      prefix=settings.API_V1_STR)
+app.include_router(analytics.router,    prefix=settings.API_V1_STR)
+app.include_router(reports.router,      prefix=settings.API_V1_STR)
+app.include_router(live_traffic.router, prefix=settings.API_V1_STR)
+
 
 
 @app.get("/")

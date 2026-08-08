@@ -7,7 +7,8 @@ import {
   FaBrain, 
   FaUserShield, 
   FaSignOutAlt, 
-  FaCity 
+  FaCity,
+  FaVideo
 } from 'react-icons/fa';
 
 const Sidebar = ({ isOpen, setIsOpen }) => {
@@ -15,10 +16,12 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: <FaChartLine /> },
+    { name: 'Live Traffic', path: '/live-traffic', icon: <FaVideo /> },
     { name: 'Live Traffic Map', path: '/map', icon: <FaMapMarkedAlt /> },
     { name: 'Area Analytics', path: '/area', icon: <FaCity /> },
     { name: 'AI Predictor', path: '/predict', icon: <FaBrain /> },
   ];
+
 
   // Restrict Admin controls to authorized roles
   if (role === 'Admin' || role === 'Traffic Analyst') {

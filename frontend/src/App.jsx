@@ -12,6 +12,7 @@ import MapPage from './pages/MapPage';
 import Prediction from './pages/Prediction';
 import AdminPanel from './pages/AdminPanel';
 import AreaAnalytics from './pages/AreaAnalytics';
+import LiveTrafficPage from './pages/LiveTrafficPage';
 
 // Components
 import Sidebar from './components/Sidebar';
@@ -86,6 +87,17 @@ function App() {
                 </PrivateRoute>
               } 
             />
+            <Route 
+              path="/live-traffic" 
+              element={
+                <PrivateRoute>
+                  <AppLayout>
+                    <LiveTrafficPage />
+                  </AppLayout>
+                </PrivateRoute>
+              } 
+            />
+
             <Route 
               path="/map" 
               element={

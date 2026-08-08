@@ -40,3 +40,32 @@ export const reportsAPI = {
   getPDFUrl: () => `${API_URL}/reports/pdf?token=${localStorage.getItem('token')}`
 };
 
+export const liveTrafficAPI = {
+  getCameras: (lat, lng) => {
+    const params = {};
+    if (lat && lng) {
+      params.latitude = lat;
+      params.longitude = lng;
+    }
+    return api.get('/live-traffic/cameras', { params });
+  },
+  detect: (data) => api.post('/live-traffic/detect', data),
+  getHistorical: (period = '24h', cameraId = null) => {
+    const params = { period };
+    if (cameraId) params.camera_id = cameraId;
+    return api.get('/live-traffic/historical', { params });
+  },
+  getPrediction: () => api.get('/live-traffic/prediction'),
+  getRoute: (originLat, originLng, destLat, destLng) => api.get('/live-traffic/route', {
+    params: { origin_lat: originLat, origin_lng: originLng, dest_lat: destLat, dest_lng: destLng }
+  }),
+  getWeather: (lat, lng) => api.get('/live-traffic/weather', { params: { latitude: lat, longitude: lng } }),
+  getCamera: (cameraId) => api.get(`/live-traffic/cameras/${cameraId}`),
+  getNearestCamera: (lat, lng, maxDistanceKm = 50.0) => api.get('/live-traffic/nearest', { params: { latitude: lat, longitude: lng, max_distance_km: maxDistanceKm } }),
+  reverseGeocode: (lat, lng) => api.get('/live-traffic/reverse-geocode', { params: { latitude: lat, longitude: lng } }),
+  getAreaAnalysis: (lat, lng, accuracy = 15.0) => api.get('/live-traffic/area-analysis', { params: { latitude: lat, longitude: lng, accuracy_meters: accuracy } }),
+  getLocations: () => api.get('/live-traffic/locations'),
+  getAreaQuery: (area, city, state, country) => api.get('/live-traffic/area-query', { params: { area, city, state, country } }),
+};
+
+
