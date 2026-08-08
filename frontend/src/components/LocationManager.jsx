@@ -73,50 +73,84 @@ const LocationManager = ({ onLocationSelect, onLiveTraffic }) => {
   const requestLocation = () => {
     setLocationStatus('loading');
     setTrafficError('');
-    if (!navigator.geolocation) {
+    setManualForm(false);
+
+    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
       setLocationStatus('error');
       setManualForm(true);
+      setTrafficError('Location requires a secure HTTPS connection. Please open the deployed HTTPS website.');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude, accuracy = 15 } = position.coords;
-        let cityName = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-        let fullAddress = null;
+    if (!navigator.geolocation) {
+      setLocationStatus('error');
+      setManualForm(true);
+      setTrafficError('This browser does not support GPS location.');
+      return;
+    }
 
-        try {
-          const geo = await liveTrafficAPI.reverseGeocode(latitude, longitude);
-          if (geo?.data) {
-            fullAddress = geo.data;
-            cityName = geo.data.area
-              ? `${geo.data.area}, ${geo.data.city}`
-              : `${geo.data.city}, ${geo.data.state}`;
-          }
-        } catch (e) {
-          console.warn('Reverse geocode notice:', e);
+    const handlePosition = async (position) => {
+      const { latitude, longitude, accuracy = 15 } = position.coords;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('The phone returned an invalid GPS position.');
+      }
+
+      const safeAccuracy = Math.round(Number.isFinite(accuracy) ? accuracy : 15);
+      let cityName = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      let fullAddress = null;
+
+      // GPS success must not depend on reverse-geocoding success.
+      try {
+        const geo = await liveTrafficAPI.reverseGeocode(latitude, longitude);
+        if (geo?.data) {
+          fullAddress = geo.data;
+          const area = geo.data.area && geo.data.area !== 'Unknown' ? geo.data.area : '';
+          const city = geo.data.city && geo.data.city !== 'Unknown' ? geo.data.city : '';
+          const state = geo.data.state && geo.data.state !== 'Unknown' ? geo.data.state : '';
+          cityName = [area, city || state].filter(Boolean).join(', ') || cityName;
         }
+      } catch (e) {
+        console.warn('Reverse geocode notice:', e);
+      }
 
-        const location = {
-          name: cityName,
-          latitude,
-          longitude,
-          accuracy: Math.round(accuracy),
-          address: fullAddress,
-        };
+      const location = {
+        name: cityName,
+        latitude,
+        longitude,
+        accuracy: safeAccuracy,
+        address: fullAddress,
+      };
 
-        setCurrentLocation(location);
-        setLocationStatus('success');
-        onLocationSelect?.(location);
-        await loadLocationTraffic(latitude, longitude, Math.round(accuracy));
-      },
-      () => {
-        setLocationStatus('error');
-        setManualForm(true);
-        setTrafficError('Location permission was not provided.');
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
-    );
+      setCurrentLocation(location);
+      setLocationStatus('success');
+      onLocationSelect?.(location);
+
+      const traffic = await loadLocationTraffic(latitude, longitude, safeAccuracy);
+      if (!fullAddress && traffic?.area_name) {
+        setCurrentLocation((prev) => ({ ...prev, name: [traffic.area_name, traffic.city].filter(Boolean).join(', ') || prev.name }));
+      }
+    };
+
+    const handleError = (err) => {
+      console.warn('GPS error:', err);
+      setLocationStatus('error');
+      setManualForm(true);
+      const messages = {
+        1: 'Location permission was denied. Allow Location for this website in your phone browser settings.',
+        2: 'Your phone could not determine the location. Turn on GPS/Location Services and try again.',
+        3: 'Location request timed out. Move outdoors or near a window and try again.',
+      };
+      setTrafficError(messages[err?.code] || 'Unable to determine your location. Please try again.');
+    };
+
+    const retry = () => navigator.geolocation.getCurrentPosition(handlePosition, handleError, {
+      enableHighAccuracy: false, timeout: 20000, maximumAge: 60000
+    });
+
+    navigator.geolocation.getCurrentPosition(handlePosition, (err) => {
+      if (err?.code === 3 || err?.code === 2) retry();
+      else handleError(err);
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   };
 
   const handleSelectSearchResult = async (result) => {

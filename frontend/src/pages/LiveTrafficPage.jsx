@@ -279,32 +279,48 @@ const LiveTrafficInner = () => {
     setErrorMsg('');
     setDetectionStep(1);
 
+    const processPosition = async (pos) => {
+      const lat = Number(pos.coords.latitude);
+      const lng = Number(pos.coords.longitude);
+      const accuracy = Math.round(Number(pos.coords.accuracy) || 15);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Invalid GPS coordinates returned by the device.');
+      setUserLocation({ lat, lng, accuracy });
+
+      setDetectionStep(2);
+      try {
+        const geoRes = await liveTrafficAPI.reverseGeocode(lat, lng);
+        if (geoRes?.data) setUserLocationAddress({ ...geoRes.data, accuracy_meters: accuracy });
+      } catch (e) {
+        console.warn('Reverse geocode notice:', e);
+      }
+
+      setDetectionStep(3);
+      const trafficRes = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      if (trafficRes?.data?.ok === false) throw new Error(trafficRes.data.message || 'Live traffic data unavailable.');
+      setAreaAnalysis(trafficRes.data);
+      setDetectionData(null);
+      setCameras([]);
+      setSelectedCamera(null);
+      setDetectionStep(4);
+    };
+
+    const handleGpsError = (err) => {
+      console.warn('GPS notice:', err);
+      setGpsLoading(false);
+      setGpsDenied(true);
+      setDetectionStep(0);
+      const msg = {
+        1: 'Location permission was denied. Allow Location for this website in your phone browser settings.',
+        2: 'Your phone could not determine the location. Turn on GPS/Location Services and try again.',
+        3: 'Location request timed out. Try again with GPS enabled.',
+      }[err?.code] || 'Unable to determine your location.';
+      setErrorMsg(msg);
+    };
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const accuracy = Math.round(pos.coords.accuracy || 15);
-        setUserLocation({ lat, lng, accuracy });
-
-        setDetectionStep(2);
         try {
-          const geoRes = await liveTrafficAPI.reverseGeocode(lat, lng);
-          if (geoRes?.data) setUserLocationAddress({ ...geoRes.data, accuracy_meters: accuracy });
-        } catch (e) {
-          console.warn('Reverse geocode notice:', e);
-        }
-
-        setDetectionStep(3);
-        try {
-          const trafficRes = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
-          if (trafficRes?.data?.ok === false) {
-            throw new Error(trafficRes.data.message || 'Live traffic data unavailable.');
-          }
-          setAreaAnalysis(trafficRes.data);
-          setDetectionData(null);
-          setCameras([]);
-          setSelectedCamera(null);
-          setDetectionStep(4);
+          await processPosition(pos);
         } catch (e) {
           console.warn('Location traffic notice:', e);
           setErrorMsg(e?.response?.data?.message || e?.response?.data?.detail || e?.message || 'Live traffic data is unavailable for this location.');
@@ -315,13 +331,21 @@ const LiveTrafficInner = () => {
         }
       },
       (err) => {
-        console.warn('GPS notice:', err);
-        setGpsLoading(false);
-        setGpsDenied(true);
-        setDetectionStep(0);
-        setErrorMsg('Location permission was not provided.');
+        if (err?.code === 2 || err?.code === 3) {
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              try { await processPosition(pos); }
+              catch (e) { setErrorMsg(e?.message || 'Live traffic data is unavailable for this location.'); setAreaAnalysis(null); setDetectionStep(0); }
+              finally { setGpsLoading(false); }
+            },
+            handleGpsError,
+            { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+          );
+        } else {
+          handleGpsError(err);
+        }
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 

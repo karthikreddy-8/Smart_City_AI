@@ -208,24 +208,22 @@ const Dashboard = () => {
             </div>
             <span className="text-xs font-bold text-emerald-400">● LIVE DATA</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              ['Cars', liveVehicleData.vehicle_counts?.car || 0],
-              ['Bikes', liveVehicleData.vehicle_counts?.motorcycle || 0],
-              ['Buses', liveVehicleData.vehicle_counts?.bus || 0],
-              ['Trucks', liveVehicleData.vehicle_counts?.truck || 0],
-              ['Autos', liveVehicleData.vehicle_counts?.auto_rickshaw || 0],
-              ['Total', liveVehicleData.vehicle_counts?.total || 0],
+              ['Estimated Vehicles / Hour', liveVehicleData.estimated_vehicles_per_hour ?? liveVehicleData.estimated_vehicles_in_area ?? liveVehicleData.vehicle_counts?.total ?? 0],
+              ['Current Speed', `${liveVehicleData.average_speed_kmh ?? liveVehicleData.current_speed_kmh ?? 0} km/h`],
+              ['Traffic Density', `${liveVehicleData.traffic_density_pct ?? liveVehicleData.congestion_pct ?? liveVehicleData.congestion_percentage ?? 0}%`],
+              ['Traffic Level', liveVehicleData.overall_traffic_level ?? liveVehicleData.traffic_density ?? 'Unknown'],
             ].map(([label, value]) => (
               <div key={label} className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3">
                 <span className="text-[10px] text-slate-500 uppercase font-bold">{label}</span>
-                <p className="text-xl font-black text-white mt-1">{Number(value).toLocaleString()}</p>
+                <p className="text-xl font-black text-white mt-1">{typeof value === 'number' ? Number(value).toLocaleString() : value}</p>
               </div>
             ))}
           </div>
           <div className="mt-3 text-xs text-slate-400">
-            Traffic: <span className="font-bold text-cyan-300">{liveVehicleData.traffic_density || 'Unknown'}</span>
-            {' · '}Congestion: <span className="font-bold text-amber-300">{liveVehicleData.congestion_percentage ?? 0}%</span>
+            Source: <span className="font-bold text-cyan-300">{liveVehicleData.data_source || 'Live traffic provider'}</span>
+            {' · '}This is an estimate, not an exact vehicle counter.
           </div>
         </motion.div>
       )}

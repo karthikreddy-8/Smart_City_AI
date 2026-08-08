@@ -361,46 +361,64 @@ const AreaAnalyticsInner = () => {
     // IMPORTANT: Use My Location must never open the device camera.
     stopLocalCamera();
 
+    const processPosition = async (pos) => {
+      const lat = Number(pos.coords.latitude);
+      const lng = Number(pos.coords.longitude);
+      const accuracy = Math.round(Number(pos.coords.accuracy) || 15);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Invalid GPS coordinates returned by the device.');
+      setUserLocation({ lat, lng, accuracy });
+
+      try {
+        const geoRes = await liveTrafficAPI.reverseGeocode(lat, lng);
+        if (geoRes?.data) {
+          const addr = { ...geoRes.data, accuracy_meters: accuracy };
+          setUserLocationAddress(addr);
+          setSelectedArea(addr.area && addr.area !== 'Unknown' ? addr.area : '');
+          setSelectedCity(addr.city && addr.city !== 'Unknown' ? addr.city : '');
+          setSelectedState(addr.state && addr.state !== 'Unknown' ? addr.state : '');
+          setSelectedCountry(addr.country && addr.country !== 'Unknown' ? addr.country : 'India');
+        }
+      } catch (e) {
+        console.warn('Reverse geocode notice:', e);
+      }
+
+      const res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      if (res?.data?.ok === false) throw new Error(res.data.message || 'Live traffic data unavailable.');
+      setAreaAnalysis(res.data);
+      setLiveCameras([]);
+    };
+
+    const handleGpsError = (err) => {
+      console.warn('GPS error:', err);
+      setGpsLoading(false);
+      const msg = {
+        1: 'Location permission was denied. Allow Location for this website in your phone browser settings.',
+        2: 'Your phone could not determine the location. Turn on GPS/Location Services and try again.',
+        3: 'Location request timed out. Try again with GPS enabled.',
+      }[err?.code] || 'Unable to determine your location. You can select an area manually.';
+      setStatusMessage(msg);
+    };
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const accuracy = Math.round(pos.coords.accuracy || 15);
-        setUserLocation({ lat, lng, accuracy });
-
-        try {
-          const geoRes = await liveTrafficAPI.reverseGeocode(lat, lng);
-          if (geoRes?.data) {
-            const addr = { ...geoRes.data, accuracy_meters: accuracy };
-            setUserLocationAddress(addr);
-            setSelectedArea(addr.area || '');
-            setSelectedCity(addr.city || '');
-            setSelectedState(addr.state || '');
-            setSelectedCountry(addr.country || 'India');
-          }
-        } catch (e) {
-          console.warn('Reverse geocode notice:', e);
-        }
-
-        try {
-          const res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
-          if (res?.data?.ok === false) throw new Error(res.data.message || 'Live traffic data unavailable.');
-          setAreaAnalysis(res.data);
-          setLiveCameras([]);
-        } catch (e) {
-          console.warn('Location traffic notice:', e);
-          setAreaAnalysis(null);
-          setStatusMessage(e?.response?.data?.message || e?.message || 'Live traffic data is unavailable for this location.');
-        } finally {
-          setGpsLoading(false);
-        }
+        try { await processPosition(pos); }
+        catch (e) { setAreaAnalysis(null); setStatusMessage(e?.response?.data?.message || e?.response?.data?.detail || e?.message || 'Live traffic data is unavailable for this location.'); }
+        finally { setGpsLoading(false); }
       },
       (err) => {
-        console.warn('GPS denied:', err);
-        setGpsLoading(false);
-        setStatusMessage('Location permission was not provided. You can select an area manually.');
+        if (err?.code === 2 || err?.code === 3) {
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              try { await processPosition(pos); }
+              catch (e) { setAreaAnalysis(null); setStatusMessage(e?.message || 'Live traffic data is unavailable for this location.'); }
+              finally { setGpsLoading(false); }
+            },
+            handleGpsError,
+            { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+          );
+        } else { handleGpsError(err); }
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 

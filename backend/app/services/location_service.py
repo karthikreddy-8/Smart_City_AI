@@ -4,6 +4,7 @@ and travel-time estimation.
 """
 import math
 import requests
+import os
 from typing import Optional, Dict, Any
 from app.services.camera_service import (
     get_all_cameras,
@@ -13,11 +14,61 @@ from app.services.camera_service import (
 )
 
 
+def _tomtom_reverse_geocode(latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
+    """Use TomTom Orbis v2 first for consistent mobile GPS address resolution."""
+    key = os.getenv("TOMTOM_API_KEY", "").strip()
+    if not key:
+        return None
+    try:
+        response = requests.get(
+            "https://api.tomtom.com/maps/orbis/places/reverseGeocode",
+            params={
+                "position": f"{longitude},{latitude}",
+                "radiusInMeters": 1000,
+                "geopoliticalView": "IN",
+            },
+            headers={
+                "TomTom-Api-Version": "2",
+                "TomTom-Api-Key": key,
+                "Accept": "application/json",
+                "Attributes": "results(*,address(*))",
+            },
+            timeout=7,
+        )
+        if response.status_code != 200:
+            print(f"[WARN] TomTom reverse geocode HTTP {response.status_code}")
+            return None
+        rows = response.json().get("results") or []
+        if not rows:
+            return None
+        addr = rows[0].get("address") or {}
+        return {
+            "country": addr.get("country") or "Unknown Country",
+            "state": addr.get("countrySubdivision") or "Unknown State",
+            "city": addr.get("municipality") or "Unknown City",
+            "district": addr.get("countrySecondarySubdivision") or addr.get("countryTertiarySubdivision") or addr.get("municipality") or "Unknown District",
+            "area": addr.get("neighborhood") or addr.get("municipalitySubdivision") or addr.get("municipalitySecondarySubdivision") or addr.get("countryTertiarySubdivision") or addr.get("municipality") or "Unknown Area",
+            "road_name": addr.get("street") or "Unknown Road",
+            "postal_code": addr.get("postalCode") or "Unknown Postal Code",
+            "latitude": round(latitude, 5),
+            "longitude": round(longitude, 5),
+        }
+    except requests.RequestException as exc:
+        print(f"[WARN] TomTom reverse geocode failed: {exc}")
+        return None
+
+
 def reverse_geocode(latitude: float, longitude: float) -> Dict[str, Any]:
     """
     Reverse geocode GPS coordinates using OpenStreetMap Nominatim API.
     Returns Country, State, City, District, Area, Road Name, Postal Code.
     """
+    # Prefer TomTom when the project has a valid key; fall back to Nominatim
+    # so GPS still works if the traffic provider is temporarily unavailable.
+    tomtom_result = _tomtom_reverse_geocode(latitude, longitude)
+    if tomtom_result:
+        return tomtom_result
+
     url = "https://nominatim.openstreetmap.org/reverse"
     headers = {"User-Agent": "SmartCityAI-UrbanTrafficAnalytics/1.0"}
     params = {
