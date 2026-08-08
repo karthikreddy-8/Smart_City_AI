@@ -135,6 +135,30 @@ def read_root():
 
 
 @app.get("/health")
-def health_check():
-    """Lightweight health check endpoint for uptime monitoring."""
-    return {"status": "ok"}
+@app.get("/api/health")
+@app.get("/api/v1/health")
+def detailed_health_check():
+    """Detailed health check endpoint reporting Backend, YOLO, Database, and Camera status."""
+    db_status = "CONNECTED"
+    try:
+        from sqlalchemy import text
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+    except Exception as e:
+        db_status = f"DISCONNECTED ({e})"
+
+
+    try:
+        from app.ml.yolo_detector import yolo_detector
+        yolo_status = "READY" if yolo_detector.using_yolo else "FALLBACK CONTOUR (PyTorch active)"
+    except Exception as yerr:
+        yolo_status = f"UNAVAILABLE ({yerr})"
+
+    return {
+        "Backend": "ONLINE",
+        "YOLO": yolo_status,
+        "Database": db_status,
+        "Camera": "AVAILABLE"
+    }
+

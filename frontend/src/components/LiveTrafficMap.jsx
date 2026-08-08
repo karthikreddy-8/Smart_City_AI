@@ -72,10 +72,19 @@ const UserGpsIcon = (() => {
   }
 })();
 
-/* ── Re-centering helper ──────────────────────────────────────────────────── */
+/* ── Re-centering & Mobile Resizing helper ─────────────────────────────────── */
 function MapController({ center }) {
   const map = useMap();
   React.useEffect(() => {
+    // Invalidate map size on mount/render to ensure full mobile rendering
+    const timer = setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch (err) {
+        console.warn('Map invalidateSize notice:', err);
+      }
+    }, 200);
+
     if (center && Array.isArray(center) && center.length === 2 && !isNaN(center[0]) && !isNaN(center[1])) {
       try {
         map.flyTo(center, 14, { animate: true, duration: 1.2 });
@@ -83,9 +92,11 @@ function MapController({ center }) {
         console.warn('Map flyTo error:', err);
       }
     }
+    return () => clearTimeout(timer);
   }, [center, map]);
   return null;
 }
+
 
 /* ── Error Boundary for Map Component ───────────────────────────────────── */
 class MapErrorBoundary extends React.Component {

@@ -45,13 +45,13 @@ class LiveTrafficErrorBoundary extends React.Component {
           <div className="w-16 h-16 rounded-2xl bg-rose-950/80 border border-rose-700 flex items-center justify-center mx-auto text-rose-400 text-3xl">
             <FaExclamationTriangle />
           </div>
-          <h2 className="text-xl font-black text-white">Live Traffic Unavailable</h2>
+          <h2 className="text-xl font-black text-white">Live Traffic Notice</h2>
           <p className="text-sm text-slate-400 max-w-md mx-auto">
-            The Live Traffic interface encountered a minor loading issue. The rest of the SmartCity AI system remains fully operational.
+            The Live Traffic interface encountered a minor loading issue. Please reload the page.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="px-6 py-2.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-extrabold text-xs shadow-lg transition-all"
+            className="px-6 py-2.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-extrabold text-xs shadow-lg transition-all cursor-pointer"
           >
             Reload Page
           </button>
@@ -151,7 +151,7 @@ const LiveTrafficInner = () => {
   const uploadedVideoRef= useRef(null);
   const canvasRef       = useRef(null);
 
-  /* ── Load initial non-blocking data safely on mount ─────────────────────── */
+  /* ── Load initial non-blocking data quietly on mount ────────────────────── */
   useEffect(() => {
     loadCameras();
     fetchPredictions();
@@ -198,10 +198,10 @@ const LiveTrafficInner = () => {
       }
       setConnState(STATE.LIVE);
     } catch (e) {
-      console.warn('[INFO] Area traffic analysis error:', e?.message || e);
+      console.warn('[INFO] Area traffic analysis notice:', e?.message || e);
       if (!silent) {
-        setErrorMsg('AI vehicle detection is currently unavailable.');
-        setConnState(STATE.ERROR);
+        // Do not crash page or set global banner; provide quiet fallback status
+        setConnState(STATE.IDLE);
       }
     }
   };
@@ -262,7 +262,7 @@ const LiveTrafficInner = () => {
   /* ── Detect My Area Flow (Steps 1, 2, 3, 4) ────────────────────────────── */
   const handleDetectMyArea = () => {
     if (!navigator.geolocation) {
-      setErrorMsg('Geolocation is not supported by your browser.');
+      setErrorMsg('Location permission was not provided.');
       return;
     }
 
@@ -333,7 +333,7 @@ const LiveTrafficInner = () => {
     }
   };
 
-  /* ── Custom Input Handlers ──────────────────────────────────────────────── */
+  /* ── Mobile & Desktop Device Camera Handler ───────────────────────────── */
   const handleStartDeviceCamera = async () => {
     stopCustomInputSources();
     setErrorMsg('');
@@ -341,9 +341,17 @@ const LiveTrafficInner = () => {
     setConnState(STATE.CONNECTING);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' }
-      });
+      // Rear camera constraint preference for mobile Android/iPhone devices
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: 'environment' } }
+        });
+      } catch (err1) {
+        // Fallback for desktop webcams or devices with single camera constraint
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
       webcamStreamRef.current = stream;
 
       if (webcamVideoRef.current) {
@@ -357,11 +365,11 @@ const LiveTrafficInner = () => {
       clearInterval(refreshInterval.current);
       refreshInterval.current = setInterval(() => {
         captureFrameAndProcess('device');
-      }, 1000);
+      }, 800);
     } catch (err) {
-      console.warn('Device camera notice:', err);
+      console.warn('Device camera error:', err);
       setConnState(STATE.ERROR);
-      setErrorMsg('Device camera permission denied or unavailable.');
+      setErrorMsg('Camera permission is required for live vehicle detection.');
     }
   };
 
@@ -386,7 +394,7 @@ const LiveTrafficInner = () => {
       clearInterval(refreshInterval.current);
       refreshInterval.current = setInterval(() => {
         captureFrameAndProcess('video');
-      }, 1000);
+      }, 800);
     }, 500);
   };
 
@@ -408,6 +416,7 @@ const LiveTrafficInner = () => {
     reader.readAsDataURL(file);
   };
 
+  /* Client-side frame resizing & base64 optimization for mobile performance */
   const captureFrameAndProcess = (type) => {
     let videoEl = null;
     if (type === 'device') videoEl = webcamVideoRef.current;
@@ -416,13 +425,17 @@ const LiveTrafficInner = () => {
     if (!videoEl || videoEl.paused || videoEl.ended || videoEl.readyState < 2) return;
 
     const canvas = canvasRef.current || document.createElement('canvas');
-    canvas.width = videoEl.videoWidth || 640;
-    canvas.height = videoEl.videoHeight || 480;
+    // Resize frame to max 640 width for mobile optimization
+    const maxWidth = 640;
+    const scale = Math.min(1, maxWidth / (videoEl.videoWidth || 640));
+    canvas.width = Math.round((videoEl.videoWidth || 640) * scale);
+    canvas.height = Math.round((videoEl.videoHeight || 480) * scale);
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-    const frameBase64 = canvas.toDataURL('image/jpeg', 0.8);
+    const frameBase64 = canvas.toDataURL('image/jpeg', 0.75);
     runFrameDetection(frameBase64, type, true);
   };
 
@@ -489,7 +502,7 @@ const LiveTrafficInner = () => {
   };
 
   /* ══════════════════════════════════════════════════════════════════════════
-      RENDER (SECTIONS 1 TO 9 WITH SECTION 10 INITIAL STATE)
+      RENDER (SECTIONS 1 TO 9 WITH CLEAN INITIAL UI STATE)
   ═══════════════════════════════════════════════════════════════════════════ */
   return (
     <div className="space-y-6 pb-20 max-w-7xl mx-auto px-2 sm:px-4">
@@ -558,7 +571,7 @@ const LiveTrafficInner = () => {
         )}
       </div>
 
-      {/* ERROR BANNER */}
+      {/* ERROR / CAMERA PERMISSION BANNER */}
       {errorMsg && (
         <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-600 flex items-center justify-between gap-3 text-rose-200 shadow-xl">
           <div className="flex items-center gap-3">
@@ -566,7 +579,7 @@ const LiveTrafficInner = () => {
             <p className="text-xs sm:text-sm font-bold">{errorMsg}</p>
           </div>
           <button
-            onClick={handleDetectMyArea}
+            onClick={handleStartDeviceCamera}
             className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs transition-all shadow cursor-pointer"
           >
             Try Again
@@ -574,7 +587,21 @@ const LiveTrafficInner = () => {
         </div>
       )}
 
-      {/* ── SECTION 2: 📍 YOUR AREA CARD (Section 10 Initial State) ────────── */}
+      {/* ACTIVE CAMERA / AI STATUS BADGES WHEN STREAM ACTIVE */}
+      {connState === STATE.LIVE && (
+        <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-800 flex items-center justify-between gap-2 shadow-xl">
+          <div className="flex items-center gap-2 text-rose-500 font-black text-xs sm:text-sm">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+            <span>🔴 LIVE</span>
+            <span className="text-slate-400 font-normal">· {sourceMode === 'device' ? 'My Device Camera' : 'Live Area Camera'}</span>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-xs font-extrabold flex items-center gap-1.5">
+            <span>🟢 AI Detection: ACTIVE</span>
+          </span>
+        </div>
+      )}
+
+      {/* ── SECTION 2: 📍 LOCATION CARD ──────────────────────────────────── */}
       <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-3 backdrop-blur-xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -607,15 +634,15 @@ const LiveTrafficInner = () => {
           </div>
         ) : (
           <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-slate-400 text-xs font-bold flex items-center justify-between">
-            <span>Location not detected yet. Click "Detect My Area" to find local camera coverage.</span>
-            <button onClick={handleDetectMyArea} className="text-sky-400 hover:underline font-extrabold text-xs">
+            <span>Location: Not detected yet. Click "📍 Detect My Area" to find local camera coverage.</span>
+            <button onClick={handleDetectMyArea} className="text-sky-400 hover:underline font-extrabold text-xs cursor-pointer">
               Detect Now
             </button>
           </div>
         )}
       </div>
 
-      {/* ── SECTION 3: 🚦 AREA TRAFFIC STATUS CARD ────────────────────────── */}
+      {/* ── SECTION 3: 🚦 TRAFFIC STATUS CARD ────────────────────────────── */}
       <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
           <div>
@@ -632,7 +659,7 @@ const LiveTrafficInner = () => {
             </div>
           ) : (
             <span className="px-3 py-1.5 rounded-xl bg-slate-950 text-slate-500 border border-slate-800 text-xs font-bold">
-              Waiting for live traffic data
+              Traffic: Waiting for live data
             </span>
           )}
         </div>
@@ -644,31 +671,26 @@ const LiveTrafficInner = () => {
               <p className="text-2xl font-black text-white">{areaAnalysis.estimated_vehicles_in_area?.toLocaleString() || 0}</p>
               <span className="text-[9px] text-slate-500 block">Area-wide estimate</span>
             </div>
-
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
               <span className="text-[10px] text-slate-500 font-bold uppercase block">Density</span>
               <p className="text-2xl font-black text-cyan-400">{areaAnalysis.traffic_density_pct || 0}%</p>
               <span className="text-[9px] text-slate-500 block">Road capacity ratio</span>
             </div>
-
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
               <span className="text-[10px] text-slate-500 font-bold uppercase block">Congestion</span>
               <p className="text-2xl font-black text-amber-400">{areaAnalysis.congestion_pct || 0}%</p>
               <span className="text-[9px] text-slate-500 block">Current delay index</span>
             </div>
-
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
               <span className="text-[10px] text-slate-500 font-bold uppercase block">Avg Speed</span>
               <p className="text-2xl font-black text-emerald-400">{areaAnalysis.average_speed_kmh || 0} <span className="text-xs font-bold">km/h</span></p>
               <span className="text-[9px] text-slate-500 block">Area flow speed</span>
             </div>
-
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
               <span className="text-[10px] text-slate-500 font-bold uppercase block">Waiting Time</span>
               <p className="text-2xl font-black text-orange-400">{areaAnalysis.estimated_waiting_time_mins || 0} <span className="text-xs font-bold">mins</span></p>
               <span className="text-[9px] text-slate-500 block">Estimated delay</span>
             </div>
-
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
               <span className="text-[10px] text-slate-500 font-bold uppercase block">Active Cameras</span>
               <p className="text-2xl font-black text-sky-400">{activeCamsCount}</p>
@@ -677,7 +699,7 @@ const LiveTrafficInner = () => {
           </div>
         ) : (
           <div className="p-6 text-center text-slate-400 text-xs font-bold border border-slate-800 rounded-2xl bg-slate-950/60">
-            Waiting for live traffic data. Click "Detect My Area" or "Start Live Traffic".
+            Traffic: Waiting for live data. Click "📍 Detect My Area" or "Start Live Traffic".
           </div>
         )}
       </div>
@@ -798,7 +820,7 @@ const LiveTrafficInner = () => {
               <FaMapMarkerAlt className="text-cyan-400" /> TRAFFIC MAP
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              {userLocation ? 'Available after location detection.' : 'Available after location detection.'}
+              Interactive camera coverage & congestion map.
             </p>
           </div>
           <button
@@ -847,7 +869,7 @@ const LiveTrafficInner = () => {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Device Webcam */}
+              {/* Device Webcam / Rear Camera */}
               <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
                 <div className="flex items-center gap-2 text-cyan-400 text-sm font-extrabold">
                   <FaDesktop /> Use My Device Camera
@@ -857,7 +879,7 @@ const LiveTrafficInner = () => {
                   onClick={handleStartDeviceCamera}
                   className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <FaCamera /> Start Local Camera
+                  <FaCamera /> Start Device Camera
                 </button>
               </div>
 
