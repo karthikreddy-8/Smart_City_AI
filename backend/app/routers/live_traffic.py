@@ -92,29 +92,65 @@ def get_area_query_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Perform Real-Time Area Traffic Analysis by selected location hierarchy (area, city, state).
-    Resolves area coordinates and camera feeds to compute live YOLOv8 metrics.
+    Location-selection based live traffic. Uses the selected area's coordinates
+    and TomTom Traffic Flow; it does not open a camera and does not use the
+    historical CSV for current traffic.
     """
     from app.services.camera_service import get_cameras_by_area
-    from app.services.area_analytics_service import analyze_area_traffic
+    from app.services.tomtom_traffic_service import analyze_location, geocode_area
 
     cams = get_cameras_by_area(area=area, city=city, state=state, country=country, db=db)
     if cams:
-        # Pick center coordinates of the area's first active camera
-        lat = cams[0]["latitude"]
-        lng = cams[0]["longitude"]
+        lat = sum(float(c["latitude"]) for c in cams) / len(cams)
+        lng = sum(float(c["longitude"]) for c in cams) / len(cams)
+        location = {
+            "area": area or cams[0].get("area"),
+            "city": city or cams[0].get("city"),
+            "state": state or cams[0].get("state"),
+            "country": country or cams[0].get("country", "India"),
+            "road_name": cams[0].get("road_name", "Nearest Road"),
+            "accuracy_meters": 500.0,
+        }
     else:
-        lat = 17.4486
-        lng = 78.3908
+        location = geocode_area(area, city, state, country)
+        if not location:
+            return {
+                "ok": False,
+                "message": "The selected area could not be located. Please choose another area."
+            }
+        lat, lng = location["latitude"], location["longitude"]
 
-    res = analyze_area_traffic(lat, lng, db=db)
-    if area and area != "All":
-        res["area_name"] = area
-    if city and city != "All":
-        res["city"] = city
-    if state and state != "All":
-        res["state"] = state
-    return res
+    result = analyze_location(lat, lng, radius_km=1.5, location=location)
+    result["selected_area"] = area
+    result["selected_city"] = city
+    result["selected_state"] = state
+    return result
+
+
+@router.get("/location-traffic")
+def get_location_traffic(
+    latitude: float = Query(..., description="User GPS latitude"),
+    longitude: float = Query(..., description="User GPS longitude"),
+    accuracy_meters: float = Query(15.0, description="GPS accuracy in meters"),
+    radius_km: float = Query(1.5, description="Area radius to sample, in km"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get current traffic conditions around a GPS location.
+    This endpoint does not request camera permission.
+    """
+    from app.services.location_service import reverse_geocode
+    from app.services.tomtom_traffic_service import analyze_location
+
+    geo = reverse_geocode(latitude, longitude)
+    geo["accuracy_meters"] = accuracy_meters
+    return analyze_location(
+        latitude,
+        longitude,
+        radius_km=max(0.25, min(radius_km, 3.0)),
+        location=geo,
+    )
 
 
 @router.get("/area-analysis")
@@ -130,8 +166,12 @@ def get_area_traffic_analysis(
     Returns overall traffic level, road segment traffic breakdown, vehicle breakdown,
     and camera coverage summary.
     """
-    from app.services.area_analytics_service import analyze_area_traffic
-    return analyze_area_traffic(latitude, longitude, accuracy_meters=accuracy_meters, db=db)
+    from app.services.location_service import reverse_geocode
+    from app.services.tomtom_traffic_service import analyze_location
+
+    geo = reverse_geocode(latitude, longitude)
+    geo["accuracy_meters"] = accuracy_meters
+    return analyze_location(latitude, longitude, radius_km=1.5, location=geo)
 
 
 
@@ -218,15 +258,20 @@ def detect_live_traffic(
     elif payload.camera_id:
         target_cam = get_camera_by_id(payload.camera_id, db=db)
 
-    if target_cam is None and payload.latitude and payload.longitude:
+    if target_cam is None and payload.latitude is not None and payload.longitude is not None:
         target_cam = get_nearest_camera(payload.latitude, payload.longitude, online_only=True, db=db)
 
-    if target_cam is None:
-        cameras = get_all_cameras(db=db)
-        if not cameras:
-            raise HTTPException(status_code=503, detail="No cameras configured.")
-        target_cam = cameras[0]
+    if target_cam is None and payload.source_type in ("device", "video", "image"):
+        raise HTTPException(status_code=400, detail="A real image/video frame is required for vehicle detection.")
 
+    if target_cam is None:
+        raise HTTPException(status_code=404, detail="No authorized live traffic camera is configured for this location.")
+
+    from app.ml.yolo_detector import yolo_detector
+    if not yolo_detector.using_yolo:
+        raise HTTPException(status_code=503, detail="YOLOv8 is not available on the backend. Install backend requirements and restart the service.")
+    if payload.source_type in ("device", "video", "image") and not payload.frame_base64:
+        raise HTTPException(status_code=400, detail="No camera frame was received.")
 
     # Run detection
     detection = run_detection(target_cam, frame_base64=payload.frame_base64, source_type=payload.source_type or "camera")

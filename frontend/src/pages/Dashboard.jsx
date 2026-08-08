@@ -7,7 +7,7 @@ import {
 import { Line, Bar, Doughnut, Scatter } from 'react-chartjs-2';
 import {
   FaCar, FaTachometerAlt, FaExclamationTriangle, FaHeartbeat,
-  FaGasPump, FaCloudSun, FaBrain, FaChartLine, FaInfoCircle
+  FaGasPump, FaCloudSun, FaBrain, FaChartLine, FaInfoCircle, FaVideo
 } from 'react-icons/fa';
 import { analyticsAPI } from '../services/api';
 import LocationManager from '../components/LocationManager';
@@ -22,13 +22,13 @@ const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { 
-      labels: { 
-        color: '#f1f5f9', 
+    legend: {
+      labels: {
+        color: '#f1f5f9',
         font: { family: 'Outfit, sans-serif', size: 12, weight: '600' },
         usePointStyle: true,
         padding: 15
-      } 
+      }
     },
     tooltip: {
       backgroundColor: '#0f172a',
@@ -41,13 +41,13 @@ const chartOptions = {
     }
   },
   scales: {
-    x: { 
-      ticks: { color: '#cbd5e1', font: { family: 'Outfit, sans-serif', size: 11, weight: '500' } }, 
-      grid: { color: 'rgba(255, 255, 255, 0.08)' } 
+    x: {
+      ticks: { color: '#cbd5e1', font: { family: 'Outfit, sans-serif', size: 11, weight: '500' } },
+      grid: { color: 'rgba(255, 255, 255, 0.08)' }
     },
-    y: { 
-      ticks: { color: '#cbd5e1', font: { family: 'Outfit, sans-serif', size: 11, weight: '500' } }, 
-      grid: { color: 'rgba(255, 255, 255, 0.08)' } 
+    y: {
+      ticks: { color: '#cbd5e1', font: { family: 'Outfit, sans-serif', size: 11, weight: '500' } },
+      grid: { color: 'rgba(255, 255, 255, 0.08)' }
     }
   }
 };
@@ -56,13 +56,13 @@ const doughnutOptions = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { 
-      position: 'right', 
-      labels: { 
-        color: '#f1f5f9', 
+    legend: {
+      position: 'right',
+      labels: {
+        color: '#f1f5f9',
         font: { family: 'Outfit, sans-serif', size: 12, weight: '600' },
         padding: 15
-      } 
+      }
     },
     tooltip: {
       backgroundColor: '#0f172a',
@@ -82,13 +82,17 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [globalFilters, setGlobalFilters] = useState({});
+  const [liveVehicleData, setLiveVehicleData] = useState(null);
 
   const handleLocationSelect = (location) => {
     setSelectedLocation(location);
     if (location && typeof location === 'string') {
       setGlobalFilters(prev => ({ ...prev, road_name: location }));
+    } else if (location?.name) {
+      setGlobalFilters(prev => ({ ...prev, road_name: location.name }));
     } else if (!location) {
       setGlobalFilters(prev => ({ ...prev, road_name: null }));
+      setLiveVehicleData(null);
     }
   };
 
@@ -188,10 +192,44 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <LocationManager onLocationSelect={handleLocationSelect} />
+      <LocationManager onLocationSelect={handleLocationSelect} onLiveTraffic={setLiveVehicleData} />
 
       {/* Always show filters so users can explore */}
       <SmartFilters onFilterChange={handleFilterChange} />
+      {liveVehicleData && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-3xl p-5 border border-cyan-800/60"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-black text-white flex items-center gap-2"><FaVideo className="text-cyan-400" /> Live Vehicle Prediction</h3>
+              <p className="text-xs text-slate-400 mt-1">Live location-based traffic estimate from TomTom Traffic Flow</p>
+            </div>
+            <span className="text-xs font-bold text-emerald-400">● LIVE DATA</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {[
+              ['Cars', liveVehicleData.vehicle_counts?.car || 0],
+              ['Bikes', liveVehicleData.vehicle_counts?.motorcycle || 0],
+              ['Buses', liveVehicleData.vehicle_counts?.bus || 0],
+              ['Trucks', liveVehicleData.vehicle_counts?.truck || 0],
+              ['Autos', liveVehicleData.vehicle_counts?.auto_rickshaw || 0],
+              ['Total', liveVehicleData.vehicle_counts?.total || 0],
+            ].map(([label, value]) => (
+              <div key={label} className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">{label}</span>
+                <p className="text-xl font-black text-white mt-1">{Number(value).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-xs text-slate-400">
+            Traffic: <span className="font-bold text-cyan-300">{liveVehicleData.traffic_density || 'Unknown'}</span>
+            {' · '}Congestion: <span className="font-bold text-amber-300">{liveVehicleData.congestion_percentage ?? 0}%</span>
+          </div>
+        </motion.div>
+      )}
+
 
       {kpis?.is_demo && !loading && (
         <motion.div

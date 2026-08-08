@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -48,8 +48,8 @@ const makeCameraIcon = (bgColor, glowColor, ring = false) => {
   }
 };
 
-const ICON_ONLINE   = makeCameraIcon('#10b981', 'rgba(16,185,129,0.6)');
-const ICON_OFFLINE  = makeCameraIcon('#ef4444', 'rgba(239,68,68,0.5)');
+const ICON_ONLINE = makeCameraIcon('#10b981', 'rgba(16,185,129,0.6)');
+const ICON_OFFLINE = makeCameraIcon('#ef4444', 'rgba(239,68,68,0.5)');
 const ICON_SELECTED = makeCameraIcon('#0284c7', 'rgba(2,132,199,0.8)', true);
 
 const UserGpsIcon = (() => {
@@ -129,26 +129,27 @@ class MapErrorBoundary extends React.Component {
 
 /* ── Map Component ──────────────────────────────────────────────────────── */
 const LiveTrafficMapInner = ({
-  userLocation   = null,
+  userLocation = null,
   userLocationAddress = null,
-  cameras        = [],
+  cameras = [],
   selectedCamera = null,
-  onSelectCamera = () => {},
+  onSelectCamera = () => { },
+  trafficSegments = [],
 }) => {
-  const defaultCenter = [17.4486, 78.3908]; // Default fallback center
+  const defaultCenter = [20.5937, 78.9629]; // Neutral India-wide fallback; never assume a city
   const mapCenter = (userLocation && userLocation.lat && userLocation.lng)
     ? [userLocation.lat, userLocation.lng]
     : ((selectedCamera && selectedCamera.latitude && selectedCamera.longitude)
-        ? [selectedCamera.latitude, selectedCamera.longitude]
-        : ((cameras && cameras.length > 0 && cameras[0].latitude && cameras[0].longitude)
-            ? [cameras[0].latitude, cameras[0].longitude]
-            : defaultCenter));
+      ? [selectedCamera.latitude, selectedCamera.longitude]
+      : ((cameras && cameras.length > 0 && cameras[0].latitude && cameras[0].longitude)
+        ? [cameras[0].latitude, cameras[0].longitude]
+        : defaultCenter));
 
   const flyTarget = (userLocation && userLocation.lat && userLocation.lng)
     ? [userLocation.lat, userLocation.lng]
     : ((selectedCamera && selectedCamera.latitude && selectedCamera.longitude)
-        ? [selectedCamera.latitude, selectedCamera.longitude]
-        : null);
+      ? [selectedCamera.latitude, selectedCamera.longitude]
+      : null);
 
   return (
     <div className="w-full h-full min-h-[360px] rounded-2xl overflow-hidden border border-slate-800 shadow-xl relative z-0">
@@ -164,6 +165,34 @@ const LiveTrafficMapInner = ({
         />
 
         {flyTarget && <MapController center={flyTarget} />}
+
+        {/* ── Live traffic road segments from location-based provider ───── */}
+        {Array.isArray(trafficSegments) && trafficSegments.map((seg, idx) => {
+          const points = Array.isArray(seg?.points) ? seg.points : [];
+          if (points.length < 2) return null;
+          const level = (seg.traffic_level || '').toUpperCase();
+          const color = level === 'VERY HIGH' || level === 'BLOCKED' ? '#ef4444'
+            : level === 'HIGH' ? '#f97316'
+              : level === 'MODERATE' ? '#f59e0b'
+                : '#22c55e';
+          return (
+            <Polyline
+              key={`traffic-segment-${idx}`}
+              positions={points}
+              pathOptions={{ color, weight: 6, opacity: 0.9 }}
+            >
+              <Popup>
+                <div style={{ minWidth: 170 }}>
+                  <b>Live Traffic Segment</b>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>Traffic: {seg.traffic_level || 'UNKNOWN'}</div>
+                  <div style={{ fontSize: 11 }}>Congestion: {seg.congestion_pct ?? 0}%</div>
+                  <div style={{ fontSize: 11 }}>Speed: {seg.current_speed_kmh ?? 0} km/h</div>
+                  <div style={{ fontSize: 11 }}>Confidence: {seg.confidence_pct ?? 0}%</div>
+                </div>
+              </Popup>
+            </Polyline>
+          );
+        })}
 
         {/* ── User GPS Marker ─────────────────────────────────────── */}
         {userLocation && userLocation.lat && userLocation.lng && (
@@ -190,7 +219,7 @@ const LiveTrafficMapInner = ({
         {Array.isArray(cameras) && cameras.map((cam) => {
           if (!cam || !cam.latitude || !cam.longitude) return null;
           const isSelected = selectedCamera && (selectedCamera.id === cam.id || selectedCamera.camera_id === cam.id);
-          const isOffline  = (cam.status || '').toUpperCase() === 'OFFLINE';
+          const isOffline = (cam.status || '').toUpperCase() === 'OFFLINE';
           const icon = isSelected ? ICON_SELECTED : (isOffline ? ICON_OFFLINE : ICON_ONLINE);
 
           return (

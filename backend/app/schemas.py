@@ -159,8 +159,8 @@ class VehicleCountBreakdown(BaseModel):
     total: int = 0
 
 class LiveTrafficDetectRequest(BaseModel):
-    latitude: Optional[float] = 17.4484
-    longitude: Optional[float] = 78.3908
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     camera_id: Optional[str] = None
     frame_base64: Optional[str] = None
     source_type: Optional[str] = "camera"  # 'camera', 'device', 'video', 'image'

@@ -13,7 +13,8 @@ def analyze_area_traffic(
     longitude: float,
     accuracy_meters: float = 15.0,
     radius_km: float = 50.0,
-    db = None
+    db = None,
+    camera_list: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Perform area-level traffic analysis around (latitude, longitude).
@@ -28,12 +29,10 @@ def analyze_area_traffic(
     country = geo.get("country", "India")
 
     # 2. Query Cameras in Area
-    all_cams = get_all_cameras(latitude=latitude, longitude=longitude, db=db)
+    all_cams = camera_list if camera_list is not None else get_all_cameras(latitude=latitude, longitude=longitude, db=db)
     
-    # Filter cameras within search radius
-    area_cams = [c for c in all_cams if c.get("distance_km", 0.0) <= radius_km]
-    if not area_cams and all_cams:
-        area_cams = all_cams[:5] # fallback to nearest available cameras if radius exceeded
+    # Filter cameras within search radius only when no exact camera set was supplied.
+    area_cams = list(all_cams) if camera_list is not None else [c for c in all_cams if c.get("distance_km", 0.0) <= radius_km]
 
     active_cams = [c for c in area_cams if c.get("status", "").upper() in ("ONLINE", "ACTIVE")]
     offline_cams = [c for c in area_cams if c.get("status", "").upper() not in ("ONLINE", "ACTIVE")]
@@ -73,6 +72,7 @@ def analyze_area_traffic(
     congestion_sum = 0.0
     speed_sum = 0.0
     valid_speed_count = 0
+    live_detection_count = 0
 
     breakdown = {
         "car": 0, "bus": 0, "truck": 0, "motorcycle": 0, "bicycle": 0,
@@ -82,6 +82,10 @@ def analyze_area_traffic(
 
     for cam in active_cams:
         det = run_detection(cam, source_type="camera")
+        # A registered camera without a real frame/authorized stream is not live.
+        if not det.get("annotated_frame_base64"):
+            continue
+        live_detection_count += 1
         v_counts = det.get("vehicle_counts", {})
         c_pct = det.get("congestion_percentage", 0.0)
         c_speed = det.get("average_speed_kmh", 0.0)
@@ -129,6 +133,31 @@ def analyze_area_traffic(
             "camera_status": "Offline",
         })
 
+    # If no real live frames were available, do not turn zero detections into a fake LOW result.
+    if live_detection_count == 0:
+        return {
+            "area_name": area_name,
+            "city": city,
+            "state": state,
+            "country": country,
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy_meters": accuracy_meters,
+            "overall_traffic_level": "UNKNOWN",
+            "overall_traffic_icon": "⚪",
+            "estimated_vehicles_in_area": 0,
+            "traffic_density_pct": 0.0,
+            "congestion_pct": 0.0,
+            "average_speed_kmh": 0.0,
+            "estimated_waiting_time_mins": 0.0,
+            "active_cameras_count": len(active_cams),
+            "offline_cameras_count": len(offline_cams),
+            "traffic_by_road": road_items,
+            "vehicle_breakdown": breakdown,
+            "cameras_coverage": area_cams,
+            "message": "Live camera streams are not currently providing frames for this area."
+        }
+
     # 4. Compute Area-Wide Aggregates
     num_active = len(active_cams)
     avg_congestion = round(congestion_sum / num_active, 1) if num_active > 0 else 0.0
@@ -149,7 +178,7 @@ def analyze_area_traffic(
         wait_mins = round(14.0 + (avg_congestion / 4), 1)
 
     # Estimate Area Vehicles
-    estimated_area_vehicles = total_vehicles_sum * 10 if total_vehicles_sum > 0 else 0
+    estimated_area_vehicles = total_vehicles_sum
 
     return {
         "area_name": area_name,

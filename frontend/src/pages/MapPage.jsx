@@ -38,14 +38,14 @@ const makeMarkerIcon = (bgColor, iconSvg, size = 30) => {
 };
 
 const cameraSvg = `<svg stroke="#fff" fill="#fff" viewBox="0 0 512 512" height="14" width="14" xmlns="http://www.w3.org/2000/svg"><path d="M512 144v224c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V144c0-26.5 21.5-48 48-48h96l16-32h192l16 32h96c26.5 0 48 21.5 48 48zM256 352c61.9 0 112-50.1 112-112s-50.1-112-112-112-112 50.1-112 112 50.1 112 112 112zm0-176c35.3 0 64 28.7 64 64s-28.7 64-64 64-64-28.7-64-64 28.7-64 64-64z"/></svg>`;
-const areaSvg   = `<svg stroke="#fff" fill="#fff" viewBox="0 0 384 512" height="15" width="15" xmlns="http://www.w3.org/2000/svg"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0zM192 272c44.183 0 80-35.817 80-80s-35.817-80-80-80-80 35.817-80 80 35.817 80 80 80z"/></svg>`;
+const areaSvg = `<svg stroke="#fff" fill="#fff" viewBox="0 0 384 512" height="15" width="15" xmlns="http://www.w3.org/2000/svg"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0zM192 272c44.183 0 80-35.817 80-80s-35.817-80-80-80-80 35.817-80 80 35.817 80 80 80z"/></svg>`;
 
-const ICON_ONLINE_LOW      = makeMarkerIcon('#10b981', cameraSvg);
+const ICON_ONLINE_LOW = makeMarkerIcon('#10b981', cameraSvg);
 const ICON_ONLINE_MODERATE = makeMarkerIcon('#f59e0b', cameraSvg);
-const ICON_ONLINE_HIGH     = makeMarkerIcon('#f97316', cameraSvg);
-const ICON_ONLINE_VERY_HIGH= makeMarkerIcon('#ef4444', cameraSvg);
-const ICON_OFFLINE         = makeMarkerIcon('#475569', cameraSvg);
-const ICON_AREA_PIN        = makeMarkerIcon('#0284c7', areaSvg, 34);
+const ICON_ONLINE_HIGH = makeMarkerIcon('#f97316', cameraSvg);
+const ICON_ONLINE_VERY_HIGH = makeMarkerIcon('#ef4444', cameraSvg);
+const ICON_OFFLINE = makeMarkerIcon('#475569', cameraSvg);
+const ICON_AREA_PIN = makeMarkerIcon('#0284c7', areaSvg, 34);
 
 // Level colors
 const levelColor = (lvl) => {
@@ -93,6 +93,8 @@ const MapPage = () => {
 
   // Active Area Analysis details
   const [selectedAreaAnalytics, setSelectedAreaAnalytics] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); // Initial view showing all registered areas in India
   const [mapZoom, setMapZoom] = useState(5);
 
@@ -124,6 +126,52 @@ const MapPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      setUserLocation({ lat, lng, accuracy: Math.round(pos.coords.accuracy || 15) });
+      setMapCenter([lat, lng]);
+      setMapZoom(13);
+      try {
+        const [geoRes, camsRes] = await Promise.all([
+          liveTrafficAPI.reverseGeocode(lat, lng),
+          liveTrafficAPI.getCameras(lat, lng),
+        ]);
+        const addr = geoRes?.data || {};
+        const cams = Array.isArray(camsRes?.data) ? camsRes.data : [];
+        setCameras(cams);
+        const country = Object.keys(locationTree)[0] || 'India';
+        const matchedState = Object.keys(locationTree[country] || {}).find(
+          s => s.toLowerCase() === String(addr.state || '').toLowerCase()
+        );
+        if (matchedState) {
+          setSelectedState(matchedState);
+          const cities = Object.keys(locationTree[country]?.[matchedState] || {});
+          setAvailableCities(['All', ...cities]);
+          const matchedCity = cities.find(c => c.toLowerCase() === String(addr.city || '').toLowerCase());
+          if (matchedCity) {
+            setSelectedCity(matchedCity);
+            const areaObjs = locationTree[country]?.[matchedState]?.[matchedCity] || [];
+            const areas = areaObjs.map(a => a.area_name);
+            setAvailableAreas(['All', ...areas]);
+            const matchedArea = areas.find(a => a.toLowerCase() === String(addr.area || '').toLowerCase());
+            if (matchedArea) {
+              setSelectedArea(matchedArea);
+              await loadAreaTraffic(matchedArea, matchedCity, matchedState);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Map location notice:', e);
+      } finally {
+        setLocationLoading(false);
+      }
+    }, () => setLocationLoading(false), { enableHighAccuracy: true, timeout: 12000 });
   };
 
   /* ── Dropdown Cascade Handlers ─────────────────────────────────────────── */
@@ -224,7 +272,7 @@ const MapPage = () => {
     const query = e.target.value;
     setSearchQuery(query);
     if (query.trim().length >= 3) {
-      const match = cameras.find(c => 
+      const match = cameras.find(c =>
         (c.area || '').toLowerCase().includes(query.toLowerCase()) ||
         (c.city || '').toLowerCase().includes(query.toLowerCase()) ||
         (c.road_name || '').toLowerCase().includes(query.toLowerCase())
@@ -245,13 +293,13 @@ const MapPage = () => {
     if (selectedState !== 'All' && (c.state || '').toLowerCase() !== selectedState.toLowerCase()) return false;
     if (selectedCity !== 'All' && (c.city || '').toLowerCase() !== selectedCity.toLowerCase()) return false;
     if (selectedArea !== 'All' && (c.area || '').toLowerCase() !== selectedArea.toLowerCase()) return false;
-    
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const match = (c.name || '').toLowerCase().includes(q) ||
-                    (c.area || '').toLowerCase().includes(q) ||
-                    (c.city || '').toLowerCase().includes(q) ||
-                    (c.road_name || '').toLowerCase().includes(q);
+        (c.area || '').toLowerCase().includes(q) ||
+        (c.city || '').toLowerCase().includes(q) ||
+        (c.road_name || '').toLowerCase().includes(q);
       if (!match) return false;
     }
 
@@ -286,6 +334,17 @@ const MapPage = () => {
             <p className="text-xs text-slate-400 font-semibold mt-0.5">
               Select any state, city, or area to view real-time traffic camera markers & segment conditions.
             </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleUseMyLocation}
+              disabled={locationLoading}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-500 text-white text-xs font-extrabold flex items-center gap-2 disabled:opacity-60"
+            >
+              {locationLoading ? <FaSpinner className="animate-spin" /> : <FaLocationArrow />}
+              {locationLoading ? 'Locating…' : 'Use My Location'}
+            </button>
           </div>
 
           {/* Search Input */}
@@ -351,7 +410,7 @@ const MapPage = () => {
 
       {/* ── MAP OVERLAY CONTROLS & MAP CONTAINER ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        
+
         {/* Left Sidebar Controls */}
         <div className="space-y-4 lg:col-span-1">
           {/* Traffic Status Filter */}
@@ -387,7 +446,7 @@ const MapPage = () => {
                 </span>
               </div>
               <h4 className="text-sm font-black text-white">{selectedAreaAnalytics.area_name}, {selectedAreaAnalytics.city}</h4>
-              
+
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between bg-slate-950 p-2 rounded-xl border border-slate-800">
                   <span className="text-slate-400">Est. Vehicles:</span>
@@ -434,6 +493,15 @@ const MapPage = () => {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
+
+            {userLocation && (
+              <Marker position={[userLocation.lat, userLocation.lng]}>
+                <Popup>
+                  <b>📍 Your current location</b><br />
+                  Accuracy: {userLocation.accuracy} m
+                </Popup>
+              </Marker>
+            )}
 
             <MapController center={mapCenter} zoom={mapZoom} />
 

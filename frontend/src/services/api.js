@@ -64,6 +64,7 @@ export const liveTrafficAPI = {
   getNearestCamera: (lat, lng, maxDistanceKm = 50.0) => api.get('/live-traffic/nearest', { params: { latitude: lat, longitude: lng, max_distance_km: maxDistanceKm } }),
   reverseGeocode: (lat, lng) => api.get('/live-traffic/reverse-geocode', { params: { latitude: lat, longitude: lng } }),
   getAreaAnalysis: (lat, lng, accuracy = 15.0) => api.get('/live-traffic/area-analysis', { params: { latitude: lat, longitude: lng, accuracy_meters: accuracy } }),
+  getLocationTraffic: (lat, lng, accuracy = 15.0, radiusKm = 1.5) => api.get('/live-traffic/location-traffic', { params: { latitude: lat, longitude: lng, accuracy_meters: accuracy, radius_km: radiusKm } }),
   getLocations: () => api.get('/live-traffic/locations'),
   getAreaQuery: (area, city, state, country) => api.get('/live-traffic/area-query', { params: { area, city, state, country } }),
 };

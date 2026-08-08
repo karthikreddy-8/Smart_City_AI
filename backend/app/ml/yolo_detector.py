@@ -11,6 +11,7 @@ import time
 import math
 import numpy as np
 import base64
+from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
 # COCO Class mapping
@@ -83,7 +84,10 @@ class YOLOv8Detector:
     def _init_model(self):
         try:
             from ultralytics import YOLO
-            self.model = YOLO("yolov8n.pt")
+            model_path = Path(__file__).resolve().parents[2] / "yolov8n.pt"
+            if not model_path.exists():
+                raise FileNotFoundError(f"YOLO model not found: {model_path}")
+            self.model = YOLO(str(model_path))
             self.using_yolo = True
             print("[SUCCESS] YOLOv8n loaded – 9-class traffic detection active.")
         except Exception as e:
@@ -105,17 +109,16 @@ class YOLOv8Detector:
         img = self._decode_frame(frame_base64)
 
         if img is None:
-            if is_custom_input:
-                return self._empty_result(camera_id, camera_name, latitude, longitude)
-            img = self._synthetic_frame(camera_name)
+            # Never invent a camera frame or vehicle count. A real camera frame
+            # must be supplied by the frontend or a working authorized stream.
+            return self._empty_result(camera_id, camera_name, latitude, longitude)
 
         if self.using_yolo and self.model is not None:
             counts, boxes, centroids = self._run_yolo(img, camera_id, is_custom_input)
         else:
-            if is_custom_input:
-                counts, boxes, centroids = self._contour_detection(img)
-            else:
-                counts, boxes, centroids = self._heuristic(img, camera_id)
+            # If YOLO is unavailable, do not silently fabricate detections.
+            # Contour detection is intentionally not used for vehicle counts.
+            return self._empty_result(camera_id, camera_name, latitude, longitude)
 
         # Run ByteTrack / Centroid Tracking Service to assign tracking IDs
         try:
@@ -131,20 +134,9 @@ class YOLOv8Detector:
         # Speed estimation
         if is_custom_input:
             raw_speed = _tracker.estimate_speed(camera_id, centroids)
-            if raw_speed == 0.0 and total > 0:
-                raw_speed = round(25.0 + (30.0 / (total + 1)), 1)
             avg_speed = raw_speed
         else:
             raw_speed = _tracker.estimate_speed(camera_id, centroids)
-            if raw_speed == 0.0:
-                if total > 22:
-                    raw_speed = round(8 + np.random.uniform(0, 4), 1)
-                elif total > 15:
-                    raw_speed = round(20 + np.random.uniform(0, 8), 1)
-                elif total > 8:
-                    raw_speed = round(35 + np.random.uniform(0, 10), 1)
-                else:
-                    raw_speed = round(52 + np.random.uniform(0, 8), 1)
             avg_speed = raw_speed
 
         # Congestion & density calculation
@@ -153,24 +145,24 @@ class YOLOv8Detector:
 
         # STEP 11: 5-level Road Status Classification
         if total == 0 or congestion_pct < 25.0:
-            density, wait = "Low",      round(1.0 + np.random.random() * 2, 1)
+            density, wait = "Low",      round(1.0 + (congestion_pct / 25.0), 1)
             road_status = "Free Flow"
         elif congestion_pct < 50.0:
-            density, wait = "Medium",   round(3.0 + np.random.random() * 3, 1)
+            density, wait = "Medium",   round(3.0 + (congestion_pct - 25.0) / 10.0, 1)
             road_status = "Moderate"
         elif congestion_pct < 75.0:
-            density, wait = "High",     round(7.0 + np.random.random() * 5, 1)
+            density, wait = "High",     round(7.0 + (congestion_pct - 50.0) / 5.0, 1)
             road_status = "Heavy"
         elif congestion_pct < 90.0:
-            density, wait = "Very High", round(12.0 + np.random.random() * 6, 1)
+            density, wait = "Very High", round(12.0 + (congestion_pct - 75.0) / 5.0, 1)
             road_status = "Very Heavy"
         else:
-            density, wait = "Very High", round(18.0 + np.random.random() * 8, 1)
+            density, wait = "Very High", 18.0
             road_status = "Blocked"
 
         # Safety flags
         emergency_detected = counts["ambulance"] > 0 or counts["fire_truck"] > 0 or counts["police"] > 0
-        accident_detected  = (total > 18 and np.random.random() < 0.12)
+        accident_detected  = False
         blockage = "Road Open"
         if accident_detected or (total > 22 and counts["truck"] > 2):
             blockage = "Partial Block"

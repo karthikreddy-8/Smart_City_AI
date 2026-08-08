@@ -64,10 +64,10 @@ class LiveTrafficErrorBoundary extends React.Component {
 
 /* ── Connection States ───────────────────────────────────────────────────── */
 const STATE = {
-  IDLE:       'idle',
+  IDLE: 'idle',
   CONNECTING: 'connecting',
-  LIVE:       'live',
-  ERROR:      'error',
+  LIVE: 'live',
+  ERROR: 'error',
 };
 
 /* ── Style Helpers ────────────────────────────────────────────────────────── */
@@ -112,44 +112,45 @@ const levelIcon = (lvl) => {
 /* ══════════════════════════════════════════════════════════════════════════ */
 const LiveTrafficInner = () => {
   /* ── State ─────────────────────────────────────────────────────────────── */
-  const [connState,           setConnState]           = useState(STATE.IDLE);
-  const [sourceMode,          setSourceMode]          = useState('area');
-  const [cameras,             setCameras]             = useState([]);
-  const [selectedCamera,      setSelectedCamera]      = useState(null);
-  const [detectionData,       setDetectionData]       = useState(null);
-  const [areaAnalysis,        setAreaAnalysis]        = useState(null);
-  const [historicalData,      setHistoricalData]      = useState([]);
-  const [predictions,         setPredictions]         = useState([]);
+  const [connState, setConnState] = useState(STATE.IDLE);
+  const [sourceMode, setSourceMode] = useState('area');
+  const [cameras, setCameras] = useState([]);
+  const [selectedCamera, setSelectedCamera] = useState(null);
+  const [detectionData, setDetectionData] = useState(null);
+  const [areaAnalysis, setAreaAnalysis] = useState(null);
+  const [historicalData, setHistoricalData] = useState([]);
+  const [predictions, setPredictions] = useState([]);
 
   // User GPS & Address
-  const [userLocation,        setUserLocation]        = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
   const [userLocationAddress, setUserLocationAddress] = useState(null);
-  const [gpsDenied,           setGpsDenied]           = useState(false);
-  const [gpsLoading,          setGpsLoading]          = useState(false);
-  const [detectionStep,       setDetectionStep]       = useState(0);
+  const [gpsDenied, setGpsDenied] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [detectionStep, setDetectionStep] = useState(0);
 
   // Collapsible drawers
-  const [showMap,             setShowMap]             = useState(false);
-  const [showOtherOptions,    setShowOtherOptions]    = useState(false);
-  const [showAdvanced,        setShowAdvanced]        = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [showOtherOptions, setShowOtherOptions] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const [historyTab,          setHistoryTab]          = useState('yesterday');
-  const [autoRefresh,         setAutoRefresh]         = useState(true);
-  const [errorMsg,            setErrorMsg]            = useState('');
-  const [camLoading,          setCamLoading]          = useState(false);
+  const [historyTab, setHistoryTab] = useState('yesterday');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [camLoading, setCamLoading] = useState(false);
 
   // Custom Input File & Video states
-  const [uploadedVideoUrl,    setUploadedVideoUrl]    = useState(null);
-  const [uploadedImageUrl,    setUploadedImageUrl]    = useState(null);
-  const [uploadedFileName,    setUploadedFileName]    = useState('');
-  const [webcamActive,        setWebcamActive]        = useState(false);
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState(null);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [webcamActive, setWebcamActive] = useState(false);
 
   // Refs
   const refreshInterval = useRef(null);
   const webcamStreamRef = useRef(null);
-  const webcamVideoRef  = useRef(null);
-  const uploadedVideoRef= useRef(null);
-  const canvasRef       = useRef(null);
+  const webcamVideoRef = useRef(null);
+  const uploadedVideoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const frameRequestInFlight = useRef(false);
 
   /* ── Load initial non-blocking data quietly on mount ────────────────────── */
   useEffect(() => {
@@ -186,22 +187,19 @@ const LiveTrafficInner = () => {
   const runAreaTrafficAnalysis = async (lat, lng, accuracy = 15.0, silent = false) => {
     if (!silent) setConnState(STATE.CONNECTING);
     try {
-      const res = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy);
+      const res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      if (res?.data?.ok === false) throw new Error(res.data.message || 'Live traffic data unavailable.');
       if (res?.data) {
         setAreaAnalysis(res.data);
-        if (Array.isArray(res.data.cameras_coverage)) {
-          setCameras(res.data.cameras_coverage);
-          if (res.data.cameras_coverage.length > 0) {
-            setSelectedCamera(res.data.cameras_coverage[0]);
-          }
-        }
+        setCameras([]);
+        setSelectedCamera(null);
       }
       setConnState(STATE.LIVE);
     } catch (e) {
-      console.warn('[INFO] Area traffic analysis notice:', e?.message || e);
+      console.warn('[INFO] Location traffic analysis notice:', e?.message || e);
       if (!silent) {
-        // Do not crash page or set global banner; provide quiet fallback status
-        setConnState(STATE.IDLE);
+        setConnState(STATE.ERROR);
+        setErrorMsg(e?.response?.data?.message || e?.message || 'Live traffic data is unavailable.');
       }
     }
   };
@@ -213,7 +211,7 @@ const LiveTrafficInner = () => {
     try {
       const res = await liveTrafficAPI.detect({
         camera_id: cam.id || cam.camera_id,
-        latitude:  cam.latitude || 0,
+        latitude: cam.latitude || 0,
         longitude: cam.longitude || 0,
         source_type: 'camera',
       });
@@ -229,6 +227,8 @@ const LiveTrafficInner = () => {
   };
 
   const runFrameDetection = async (frameBase64, sourceType = 'device', silent = true) => {
+    if (frameRequestInFlight.current) return;
+    frameRequestInFlight.current = true;
     if (!silent) setConnState(STATE.CONNECTING);
     try {
       const res = await liveTrafficAPI.detect({
@@ -241,7 +241,12 @@ const LiveTrafficInner = () => {
       setConnState(STATE.LIVE);
     } catch (e) {
       console.error('Frame detection error:', e);
-      if (!silent) setConnState(STATE.ERROR);
+      if (!silent) {
+        setConnState(STATE.ERROR);
+        setErrorMsg(e?.response?.data?.detail || 'Live AI vehicle detection is unavailable.');
+      }
+    } finally {
+      frameRequestInFlight.current = false;
     }
   };
 
@@ -262,16 +267,17 @@ const LiveTrafficInner = () => {
   /* ── Detect My Area Flow (Steps 1, 2, 3, 4) ────────────────────────────── */
   const handleDetectMyArea = () => {
     if (!navigator.geolocation) {
-      setErrorMsg('Location permission was not provided.');
+      setErrorMsg('Location services are not supported by this browser.');
       return;
     }
 
+    // Location detection must NOT open the device camera.
     stopCustomInputSources();
     setSourceMode('area');
     setGpsLoading(true);
     setGpsDenied(false);
     setErrorMsg('');
-    setDetectionStep(1); // Step 1: "Detecting your location..."
+    setDetectionStep(1);
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -280,37 +286,33 @@ const LiveTrafficInner = () => {
         const accuracy = Math.round(pos.coords.accuracy || 15);
         setUserLocation({ lat, lng, accuracy });
 
-        // Step 2: "Finding traffic cameras in your area..."
         setDetectionStep(2);
         try {
           const geoRes = await liveTrafficAPI.reverseGeocode(lat, lng);
-          if (geoRes?.data) {
-            setUserLocationAddress({ ...geoRes.data, accuracy_meters: accuracy });
-          }
+          if (geoRes?.data) setUserLocationAddress({ ...geoRes.data, accuracy_meters: accuracy });
         } catch (e) {
           console.warn('Reverse geocode notice:', e);
-          setUserLocationAddress({
-            road_name: 'Current Corridor',
-            area: 'Local Area',
-            city: 'Local City',
-            state: 'State',
-            country: 'India',
-            latitude: Number(lat.toFixed(5)),
-            longitude: Number(lng.toFixed(5)),
-            accuracy_meters: accuracy,
-          });
         }
 
-        // Step 3: "Starting AI traffic analysis..."
         setDetectionStep(3);
-        await runAreaTrafficAnalysis(lat, lng, accuracy);
-
-        // Step 4: "Analyzing live traffic..."
-        setDetectionStep(4);
-        setTimeout(() => {
-          setDetectionStep(5); // Complete
+        try {
+          const trafficRes = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+          if (trafficRes?.data?.ok === false) {
+            throw new Error(trafficRes.data.message || 'Live traffic data unavailable.');
+          }
+          setAreaAnalysis(trafficRes.data);
+          setDetectionData(null);
+          setCameras([]);
+          setSelectedCamera(null);
+          setDetectionStep(4);
+        } catch (e) {
+          console.warn('Location traffic notice:', e);
+          setErrorMsg(e?.response?.data?.message || e?.response?.data?.detail || e?.message || 'Live traffic data is unavailable for this location.');
+          setAreaAnalysis(null);
+          setDetectionStep(0);
+        } finally {
           setGpsLoading(false);
-        }, 500);
+        }
       },
       (err) => {
         console.warn('GPS notice:', err);
@@ -319,18 +321,14 @@ const LiveTrafficInner = () => {
         setDetectionStep(0);
         setErrorMsg('Location permission was not provided.');
       },
-      { enableHighAccuracy: true, timeout: 12000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
     );
   };
 
   const handleStartLiveTraffic = async () => {
-    if (selectedCamera) {
-      await runCameraDetection(selectedCamera);
-    } else if (userLocation) {
-      await runAreaTrafficAnalysis(userLocation.lat, userLocation.lng, userLocation.accuracy);
-    } else {
-      handleDetectMyArea();
-    }
+    // The primary live source is the user's real device camera.
+    // Never silently switch to a hardcoded/demo CCTV feed.
+    await handleStartDeviceCamera();
   };
 
   /* ── Mobile & Desktop Device Camera Handler ───────────────────────────── */
@@ -341,6 +339,9 @@ const LiveTrafficInner = () => {
     setConnState(STATE.CONNECTING);
 
     try {
+      if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        throw new Error('Camera access requires HTTPS.');
+      }
       // Rear camera constraint preference for mobile Android/iPhone devices
       let stream;
       try {
@@ -420,7 +421,7 @@ const LiveTrafficInner = () => {
   const captureFrameAndProcess = (type) => {
     let videoEl = null;
     if (type === 'device') videoEl = webcamVideoRef.current;
-    if (type === 'video')  videoEl = uploadedVideoRef.current;
+    if (type === 'video') videoEl = uploadedVideoRef.current;
 
     if (!videoEl || videoEl.paused || videoEl.ended || videoEl.readyState < 2) return;
 
@@ -457,7 +458,7 @@ const LiveTrafficInner = () => {
   /* ── Derived Metrics ─────────────────────────────────────────────────────── */
   const vCounts = areaAnalysis?.vehicle_breakdown || detectionData?.vehicle_counts || {};
   const safeCameras = Array.isArray(cameras) ? cameras : [];
-  const activeCamsCount = areaAnalysis?.active_cameras_count || safeCameras.filter(c => (c?.status || '').toUpperCase() in { ONLINE:1, ACTIVE:1 }).length;
+  const activeCamsCount = areaAnalysis?.active_cameras_count || safeCameras.filter(c => (c?.status || '').toUpperCase() in { ONLINE: 1, ACTIVE: 1 }).length;
   const offlineCamsCount = areaAnalysis?.offline_cameras_count || safeCameras.filter(c => (c?.status || '').toUpperCase() === 'OFFLINE').length;
 
   /* ── Chart configuration ─────────────────────────────────────────────────── */
@@ -746,12 +747,12 @@ const LiveTrafficInner = () => {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { label: 'Cars',          key: 'car',           icon: <FaCar />,        color: 'text-sky-400' },
-            { label: 'Motorcycles',   key: 'motorcycle',    icon: <FaMotorcycle />, color: 'text-cyan-400' },
-            { label: 'Buses',         key: 'bus',           icon: <FaBus />,        color: 'text-amber-400' },
-            { label: 'Trucks',        key: 'truck',         icon: <FaTruck />,      color: 'text-purple-400' },
-            { label: 'Auto Rickshaws',key: 'auto_rickshaw', icon: <FaCarSide />,    color: 'text-yellow-400' },
-            { label: 'Emergency',     key: 'emergency',     icon: <FaAmbulance />,  color: 'text-rose-400' },
+            { label: 'Cars', key: 'car', icon: <FaCar />, color: 'text-sky-400' },
+            { label: 'Motorcycles', key: 'motorcycle', icon: <FaMotorcycle />, color: 'text-cyan-400' },
+            { label: 'Buses', key: 'bus', icon: <FaBus />, color: 'text-amber-400' },
+            { label: 'Trucks', key: 'truck', icon: <FaTruck />, color: 'text-purple-400' },
+            { label: 'Auto Rickshaws', key: 'auto_rickshaw', icon: <FaCarSide />, color: 'text-yellow-400' },
+            { label: 'Emergency', key: 'emergency', icon: <FaAmbulance />, color: 'text-rose-400' },
           ].map(({ label, key, icon, color }) => (
             <div key={key} className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
               <div className={`p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xl ${color}`}>
@@ -841,6 +842,7 @@ const LiveTrafficInner = () => {
               selectedCamera={selectedCamera}
               onSelectCamera={(cam) => setSelectedCamera(cam)}
               densityLevel={areaAnalysis?.overall_traffic_level || 'LOW'}
+              trafficSegments={areaAnalysis?.traffic_segments || []}
             />
           </div>
         )}

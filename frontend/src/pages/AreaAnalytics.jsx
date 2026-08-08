@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { 
-  FaMapMarkedAlt, FaCar, FaTachometerAlt, FaCloudSun, FaGasPump, 
+import {
+  FaMapMarkedAlt, FaCar, FaTachometerAlt, FaCloudSun, FaGasPump,
   FaHeartbeat, FaExclamationTriangle, FaRoute, FaBrain, FaChartLine,
   FaSearch, FaLocationArrow, FaSpinner, FaTimes, FaGlobeAsia, FaMapMarkerAlt,
   FaBus, FaTruck, FaMotorcycle, FaAmbulance, FaCamera, FaDesktop,
@@ -121,21 +121,21 @@ const AreaAnalyticsInner = () => {
   // ── Hierarchical Location Selection State ──
   const [locationTree, setLocationTree] = useState({});
   const [selectedCountry, setSelectedCountry] = useState('India');
-  const [selectedState, setSelectedState] = useState('Telangana');
-  const [selectedCity, setSelectedCity] = useState('Hyderabad');
-  const [selectedArea, setSelectedArea] = useState('Madhapur');
+  const [selectedState, setSelectedState] = useState('');
+  const [selectedCity, setSelectedCity] = useState('');
+  const [selectedArea, setSelectedArea] = useState('');
 
   // Available dropdown options
-  const [availableStates, setAvailableStates] = useState(['Telangana', 'Tamil Nadu', 'Karnataka', 'Maharashtra', 'Delhi']);
-  const [availableCities, setAvailableCities] = useState(['Hyderabad']);
-  const [availableAreas, setAvailableAreas] = useState(['Madhapur', 'HITEC City', 'Gachibowli', 'Banjara Hills', 'Kukatpally']);
+  const [availableStates, setAvailableStates] = useState([]);
+  const [availableCities, setAvailableCities] = useState([]);
+  const [availableAreas, setAvailableAreas] = useState([]);
 
   // Real-time Traffic State
   const [areaAnalysis, setAreaAnalysis] = useState(null);
   const [liveCameras, setLiveCameras] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [userLocationAddress, setUserLocationAddress] = useState(null);
-  
+
   const [pageLoading, setPageLoading] = useState(true);
   const [areaLoading, setAreaLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -145,8 +145,16 @@ const AreaAnalyticsInner = () => {
   // Historical CSV Dataset State (preserved)
   const [historicalAnalytics, setHistoricalAnalytics] = useState(null);
   const [markers, setMarkers] = useState([]);
+  const [localCameraActive, setLocalCameraActive] = useState(false);
+  const [localDetectionError, setLocalDetectionError] = useState('');
+  const [localDetectionFrame, setLocalDetectionFrame] = useState(null);
+  const localVideoRef = useRef(null);
+  const localCanvasRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const localTimerRef = useRef(null);
+  const localRequestInFlight = useRef(false);
 
-  /* ── Load Location Hierarchy & Default Area on Mount ──────────────────── */
+  /* ── Load registered location hierarchy without assuming the user's city ── */
   useEffect(() => {
     const initLocationData = async () => {
       setPageLoading(true);
@@ -155,42 +163,22 @@ const AreaAnalyticsInner = () => {
         if (res?.data?.hierarchy) {
           const tree = res.data.hierarchy;
           setLocationTree(tree);
-
           const countries = Object.keys(tree);
-          if (countries.length > 0) {
-            const country = countries.includes('India') ? 'India' : countries[0];
+          const country = countries.includes('India') ? 'India' : countries[0];
+          if (country) {
             setSelectedCountry(country);
-
             const states = Object.keys(tree[country] || {});
-            if (states.length > 0) {
-              setAvailableStates(states);
-              const state = states[0];
-              setSelectedState(state);
-
-              const cities = Object.keys(tree[country][state] || {});
-              if (cities.length > 0) {
-                setAvailableCities(cities);
-                const city = cities[0];
-                setSelectedCity(city);
-
-                const areaObjs = tree[country][state][city] || [];
-                const areas = areaObjs.map(a => a.area_name);
-                if (areas.length > 0) {
-                  setAvailableAreas(areas);
-                  setSelectedArea(areas[0]);
-                  fetchAreaAnalytics(areas[0], city, state, country);
-                }
-              }
-            }
+            setAvailableStates(states);
+            setSelectedState('');
+            setSelectedCity('');
+            setSelectedArea('');
+            setAvailableCities([]);
+            setAvailableAreas([]);
           }
-        } else {
-          // Default initial fetch
-          fetchAreaAnalytics('Madhapur', 'Hyderabad', 'Telangana', 'India');
         }
       } catch (err) {
         console.warn('Locations hierarchy fetch notice:', err);
-        // Fallback default fetch
-        fetchAreaAnalytics('Madhapur', 'Hyderabad', 'Telangana', 'India');
+        setStatusMessage('Unable to load registered areas. Use My Location or retry.');
       } finally {
         setPageLoading(false);
       }
@@ -205,18 +193,22 @@ const AreaAnalyticsInner = () => {
     setSelectedCountry(c);
     const states = Object.keys(locationTree[c] || {});
     setAvailableStates(states);
-    if (states.length > 0) {
-      handleStateChange(states[0], c);
-    }
+    setSelectedState('');
+    setSelectedCity('');
+    setSelectedArea('');
+    setAvailableCities([]);
+    setAvailableAreas([]);
+    setAreaAnalysis(null);
   };
 
   const handleStateChange = (s, c = selectedCountry) => {
     setSelectedState(s);
     const cities = Object.keys(locationTree[c]?.[s] || {});
     setAvailableCities(cities);
-    if (cities.length > 0) {
-      handleCityChange(cities[0], s, c);
-    }
+    setSelectedCity('');
+    setSelectedArea('');
+    setAvailableAreas([]);
+    setAreaAnalysis(null);
   };
 
   const handleCityChange = (city, s = selectedState, c = selectedCountry) => {
@@ -224,10 +216,8 @@ const AreaAnalyticsInner = () => {
     const areaObjs = locationTree[c]?.[s]?.[city] || [];
     const areas = areaObjs.map(a => a.area_name);
     setAvailableAreas(areas);
-    if (areas.length > 0) {
-      setSelectedArea(areas[0]);
-      fetchAreaAnalytics(areas[0], city, s, c);
-    }
+    setSelectedArea('');
+    setAreaAnalysis(null);
   };
 
   const handleAreaChange = (area) => {
@@ -264,15 +254,112 @@ const AreaAnalyticsInner = () => {
     }
   };
 
+
+  const stopLocalCamera = () => {
+    if (localTimerRef.current) clearInterval(localTimerRef.current);
+    localTimerRef.current = null;
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    localRequestInFlight.current = false;
+    setLocalCameraActive(false);
+  };
+
+  const captureLocalAreaFrame = async () => {
+    const video = localVideoRef.current;
+    if (!video || video.readyState < 2 || video.videoWidth === 0 || localRequestInFlight.current) return;
+    const canvas = localCanvasRef.current || document.createElement('canvas');
+    const scale = Math.min(1, 640 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    localRequestInFlight.current = true;
+    try {
+      const res = await liveTrafficAPI.detect({
+        source_type: 'device',
+        frame_base64: canvas.toDataURL('image/jpeg', 0.72),
+        latitude: userLocation?.lat ?? undefined,
+        longitude: userLocation?.lng ?? undefined,
+      });
+      if (res?.data) {
+        const d = res.data;
+        if (d.annotated_frame_base64) setLocalDetectionFrame(d.annotated_frame_base64);
+        setAreaAnalysis(prev => ({
+          ...(prev || {}),
+          area_name: userLocationAddress?.area || selectedArea || 'Current Area',
+          city: userLocationAddress?.city || selectedCity || 'Current City',
+          state: userLocationAddress?.state || selectedState || 'Current State',
+          country: userLocationAddress?.country || selectedCountry || 'India',
+          latitude: userLocation?.lat || d.latitude,
+          longitude: userLocation?.lng || d.longitude,
+          accuracy_meters: userLocation?.accuracy || 15,
+          overall_traffic_level: d.traffic_density || 'UNKNOWN',
+          overall_traffic_icon: levelIcon(d.traffic_density),
+          estimated_vehicles_in_area: d.vehicle_counts?.total || 0,
+          traffic_density_pct: d.congestion_percentage || 0,
+          congestion_pct: d.congestion_percentage || 0,
+          average_speed_kmh: d.average_speed_kmh || 0,
+          estimated_waiting_time_mins: d.expected_waiting_time_mins || 0,
+          active_cameras_count: 1,
+          offline_cameras_count: 0,
+          traffic_by_road: [{
+            road_name: userLocationAddress?.road_name || 'Local Camera View',
+            traffic_level: d.traffic_density || 'UNKNOWN',
+            level_icon: levelIcon(d.traffic_density),
+            congestion_pct: d.congestion_percentage || 0,
+            vehicle_count: d.vehicle_counts?.total || 0,
+            camera_status: 'Device Camera'
+          }],
+          vehicle_breakdown: d.vehicle_counts || {},
+          cameras_coverage: []
+        }));
+      }
+    } catch (err) {
+      setLocalDetectionError(err?.response?.data?.detail || 'AI vehicle detection is unavailable.');
+    } finally {
+      localRequestInFlight.current = false;
+    }
+  };
+
+  const startLocalCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setLocalDetectionError('Camera access is not supported by this browser.');
+      return;
+    }
+    try {
+      stopLocalCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 960 }, height: { ideal: 540 }, facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play();
+      }
+      setLocalDetectionError('');
+      setLocalCameraActive(true);
+      localTimerRef.current = setInterval(captureLocalAreaFrame, 1200);
+    } catch (err) {
+      setLocalDetectionError('Camera permission is required for live vehicle detection.');
+    }
+  };
+
   /* ── Handle Use My Location (Browser GPS) ──────────────────────────────── */
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
-      setStatusMessage('Location permission was not provided.');
+      setStatusMessage('Location services are not supported by this browser.');
       return;
     }
 
     setGpsLoading(true);
     setStatusMessage('');
+    // IMPORTANT: Use My Location must never open the device camera.
+    stopLocalCamera();
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -284,11 +371,11 @@ const AreaAnalyticsInner = () => {
         try {
           const geoRes = await liveTrafficAPI.reverseGeocode(lat, lng);
           if (geoRes?.data) {
-            const addr = geoRes.data;
-            setUserLocationAddress({ ...addr, accuracy_meters: accuracy });
-            setSelectedArea(addr.area || 'Current Area');
-            setSelectedCity(addr.city || 'Current City');
-            setSelectedState(addr.state || 'Current State');
+            const addr = { ...geoRes.data, accuracy_meters: accuracy };
+            setUserLocationAddress(addr);
+            setSelectedArea(addr.area || '');
+            setSelectedCity(addr.city || '');
+            setSelectedState(addr.state || '');
             setSelectedCountry(addr.country || 'India');
           }
         } catch (e) {
@@ -296,16 +383,14 @@ const AreaAnalyticsInner = () => {
         }
 
         try {
-          const res = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy);
-          if (res?.data) {
-            setAreaAnalysis(res.data);
-            if (Array.isArray(res.data.cameras_coverage)) {
-              setLiveCameras(res.data.cameras_coverage);
-            }
-          }
+          const res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+          if (res?.data?.ok === false) throw new Error(res.data.message || 'Live traffic data unavailable.');
+          setAreaAnalysis(res.data);
+          setLiveCameras([]);
         } catch (e) {
-          console.warn('Area analysis error:', e);
-          setStatusMessage('Live traffic service is temporarily unavailable.');
+          console.warn('Location traffic notice:', e);
+          setAreaAnalysis(null);
+          setStatusMessage(e?.response?.data?.message || e?.message || 'Live traffic data is unavailable for this location.');
         } finally {
           setGpsLoading(false);
         }
@@ -313,11 +398,13 @@ const AreaAnalyticsInner = () => {
       (err) => {
         console.warn('GPS denied:', err);
         setGpsLoading(false);
-        setStatusMessage('Location permission was not provided.');
+        setStatusMessage('Location permission was not provided. You can select an area manually.');
       },
-      { enableHighAccuracy: true, timeout: 12000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
     );
   };
+
+  useEffect(() => () => stopLocalCamera(), []);
 
   /* ── Fetch Historical Dataset Analytics (Preserved) ────────────────────── */
   const fetchHistoricalData = async () => {
@@ -334,12 +421,12 @@ const AreaAnalyticsInner = () => {
   };
 
   // Map center logic
-  const defaultCenter = [17.4486, 78.3908];
+  const defaultCenter = [20.5937, 78.9629];
   const mapCenter = userLocation
     ? [userLocation.lat, userLocation.lng]
     : ((liveCameras && liveCameras.length > 0 && liveCameras[0].latitude)
-        ? [liveCameras[0].latitude, liveCameras[0].longitude]
-        : defaultCenter);
+      ? [liveCameras[0].latitude, liveCameras[0].longitude]
+      : defaultCenter);
 
   const vCounts = areaAnalysis?.vehicle_breakdown || {};
   const safeLiveCams = Array.isArray(liveCameras) ? liveCameras : [];
@@ -357,6 +444,9 @@ const AreaAnalyticsInner = () => {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <video ref={localVideoRef} className="hidden" playsInline muted />
+      <canvas ref={localCanvasRef} className="hidden" />
+
 
       {/* ══════════════════════════════════════════════════════════════════
           1. HEADER & HIERARCHICAL LOCATION SELECTION PANEL
@@ -402,11 +492,8 @@ const AreaAnalyticsInner = () => {
                 onChange={(e) => handleCountryChange(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-semibold focus:ring-2 focus:ring-sky-500"
               >
-                {Object.keys(locationTree).length > 0 ? (
-                  Object.keys(locationTree).map(c => <option key={c} value={c}>{c}</option>)
-                ) : (
-                  <option value="India">India</option>
-                )}
+                <option value="">Select Country</option>
+                {Object.keys(locationTree).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
@@ -418,6 +505,7 @@ const AreaAnalyticsInner = () => {
                 onChange={(e) => handleStateChange(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-semibold focus:ring-2 focus:ring-sky-500"
               >
+                <option value="">Select State</option>
                 {availableStates.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
@@ -430,6 +518,7 @@ const AreaAnalyticsInner = () => {
                 onChange={(e) => handleCityChange(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white font-semibold focus:ring-2 focus:ring-sky-500"
               >
+                <option value="">Select City</option>
                 {availableCities.map(city => <option key={city} value={city}>{city}</option>)}
               </select>
             </div>
@@ -442,12 +531,35 @@ const AreaAnalyticsInner = () => {
                 onChange={(e) => handleAreaChange(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-bold text-sky-400 focus:ring-2 focus:ring-sky-500"
               >
+                <option value="">Select Area</option>
                 {availableAreas.map(area => <option key={area} value={area}>{area}</option>)}
               </select>
             </div>
           </div>
         </div>
       </div>
+
+      {(localCameraActive || localDetectionError) && (
+        <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black text-white">📹 Live Vehicle Detection</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {localDetectionError || 'Using your device camera at the detected location.'}
+            </p>
+          </div>
+          {localCameraActive && <span className="text-xs font-black text-emerald-400">● LIVE</span>}
+          {!localCameraActive && <button onClick={startLocalCamera} className="px-3 py-2 rounded-xl bg-sky-500 text-white text-xs font-bold">Start Camera</button>}
+        </div>
+      )}
+      {localDetectionFrame && (
+        <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-black text-cyan-300">LIVE AI VEHICLE VIEW</span>
+            <span className="text-[10px] text-slate-500">YOLOv8</span>
+          </div>
+          <img src={localDetectionFrame} alt="Live vehicle detection" className="w-full max-h-[420px] object-contain rounded-xl bg-black" />
+        </div>
+      )}
 
       {/* Status Notice Banner */}
       {statusMessage && (
@@ -625,12 +737,12 @@ const AreaAnalyticsInner = () => {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { label: 'Cars',          key: 'car',           icon: <FaCar />,        color: 'text-sky-400' },
-            { label: 'Motorcycles',   key: 'motorcycle',    icon: <FaMotorcycle />, color: 'text-cyan-400' },
-            { label: 'Buses',         key: 'bus',           icon: <FaBus />,        color: 'text-amber-400' },
-            { label: 'Trucks',        key: 'truck',         icon: <FaTruck />,      color: 'text-purple-400' },
-            { label: 'Auto Rickshaws',key: 'auto_rickshaw', icon: <FaCarSide />,    color: 'text-yellow-400' },
-            { label: 'Emergency',     key: 'emergency',     icon: <FaAmbulance />,  color: 'text-rose-400' },
+            { label: 'Cars', key: 'car', icon: <FaCar />, color: 'text-sky-400' },
+            { label: 'Motorcycles', key: 'motorcycle', icon: <FaMotorcycle />, color: 'text-cyan-400' },
+            { label: 'Buses', key: 'bus', icon: <FaBus />, color: 'text-amber-400' },
+            { label: 'Trucks', key: 'truck', icon: <FaTruck />, color: 'text-purple-400' },
+            { label: 'Auto Rickshaws', key: 'auto_rickshaw', icon: <FaCarSide />, color: 'text-yellow-400' },
+            { label: 'Emergency', key: 'emergency', icon: <FaAmbulance />, color: 'text-rose-400' },
           ].map(({ label, key, icon, color }) => (
             <div key={key} className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
               <div className={`p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xl ${color}`}>
@@ -694,9 +806,9 @@ const AreaAnalyticsInner = () => {
           7. 🗺️ MAP SECTION — Centered on Selected Area
       ══════════════════════════════════════════════════════════════════ */}
       <div className="glass rounded-3xl p-1 overflow-hidden h-[480px] border border-slate-700/50 shadow-2xl relative">
-        <MapContainer 
-          center={mapCenter} 
-          zoom={13} 
+        <MapContainer
+          center={mapCenter}
+          zoom={13}
           style={{ height: '100%', width: '100%', borderRadius: '1.4rem' }}
         >
           <MapRecenter center={mapCenter} />
@@ -705,6 +817,31 @@ const AreaAnalyticsInner = () => {
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; CARTO'
           />
+
+          {/* Live traffic road segments from the selected/current location */}
+          {Array.isArray(areaAnalysis?.traffic_segments) && areaAnalysis.traffic_segments.map((seg, idx) => {
+            const points = Array.isArray(seg?.points) ? seg.points : [];
+            if (points.length < 2) return null;
+            const level = (seg.traffic_level || '').toUpperCase();
+            const color = level === 'VERY HIGH' || level === 'BLOCKED' ? '#ef4444'
+              : level === 'HIGH' ? '#f97316'
+                : level === 'MODERATE' ? '#f59e0b'
+                  : '#22c55e';
+            return (
+              <Polyline key={`live-segment-${idx}`} positions={points}
+                pathOptions={{ color, weight: 6, opacity: 0.9 }}>
+                <Popup>
+                  <div style={{ minWidth: 170 }}>
+                    <b>Live Traffic Segment</b>
+                    <div style={{ fontSize: 11, marginTop: 4 }}>Traffic: {seg.traffic_level || 'UNKNOWN'}</div>
+                    <div style={{ fontSize: 11 }}>Congestion: {seg.congestion_pct ?? 0}%</div>
+                    <div style={{ fontSize: 11 }}>Speed: {seg.current_speed_kmh ?? 0} km/h</div>
+                    <div style={{ fontSize: 11 }}>Confidence: {seg.confidence_pct ?? 0}%</div>
+                  </div>
+                </Popup>
+              </Polyline>
+            );
+          })}
 
           {/* GPS Location Pin if active */}
           {userLocation && (
@@ -748,7 +885,7 @@ const AreaAnalyticsInner = () => {
               key={idx}
               center={[marker.latitude, marker.longitude]}
               radius={Math.max(8, Math.min(marker.avg_vehicles / 50, 30))}
-              pathOptions={{ 
+              pathOptions={{
                 color: getCongestionColor(marker.congestion_level),
                 fillColor: getCongestionColor(marker.congestion_level),
                 fillOpacity: 0.7,
@@ -760,7 +897,7 @@ const AreaAnalyticsInner = () => {
                   <p className="text-sm border-b pb-1 mb-1">{marker.road_name}</p>
                   <p className="text-xs">Vehicles: {marker.avg_vehicles}</p>
                   <p className="text-xs">Speed: {marker.avg_speed} km/h</p>
-                  <p className="text-xs font-bold mt-1" style={{color: getCongestionColor(marker.congestion_level)}}>
+                  <p className="text-xs font-bold mt-1" style={{ color: getCongestionColor(marker.congestion_level) }}>
                     {marker.congestion_level} Congestion
                   </p>
                   <p className="text-[10px] text-slate-500 mt-1">Source: Historical Dataset</p>
@@ -810,7 +947,7 @@ const AreaAnalyticsInner = () => {
                 <div className="glass rounded-3xl p-6 border border-slate-700/50 relative overflow-hidden group">
                   <div className="absolute -right-10 -bottom-10 text-9xl opacity-5 text-cyan-400 group-hover:scale-110 transition-transform"><FaCloudSun /></div>
                   <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2 relative z-10">
-                     Environmental Impact
+                    Environmental Impact
                   </h3>
                   <div className="space-y-5 relative z-10">
                     <div>
