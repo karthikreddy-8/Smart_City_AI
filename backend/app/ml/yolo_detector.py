@@ -5,16 +5,22 @@ YOLOv8 Real-Time Traffic Detection Engine
 – Frame-to-frame centroid tracking for speed estimation
 – Bounding box drawing with confidence scores & per-class colours
 – Supports camera streams, device webcam, uploaded video frames, and uploaded images
+
+YOLO is OPTIONAL. Set USE_YOLO=true in backend/.env to enable.
+If USE_YOLO is not set or is false, the detector runs in stub mode:
+  - No ultralytics, torch, or opencv imports happen
+  - All detection endpoints return an appropriate "YOLO disabled" response
+  - All GPS/TomTom traffic analysis pages continue working normally
 """
-import cv2
+import os
 import time
 import math
-import numpy as np
-import base64
-from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
-# COCO Class mapping
+# ── YOLO feature flag ─────────────────────────────────────────────────────────
+_USE_YOLO: bool = os.getenv("USE_YOLO", "false").strip().lower() in ("1", "true", "yes")
+
+# COCO Class mapping (needed even in stub mode for schema references)
 COCO_CLASS_MAP: Dict[int, str] = {
     1: "bicycle",
     2: "car",
@@ -25,19 +31,19 @@ COCO_CLASS_MAP: Dict[int, str] = {
 
 # Per-class BGR colours for bounding boxes
 CLASS_COLORS: Dict[str, Tuple[int, int, int]] = {
-    "car":           (0, 200, 255),   # Cyan
-    "bus":           (0, 140, 255),   # Orange
-    "truck":         (160, 32, 240),  # Purple
-    "motorcycle":    (0, 255, 180),   # Mint
-    "bicycle":       (50, 230, 100),  # Green
-    "auto_rickshaw": (0, 215, 255),   # Yellow/Gold
-    "ambulance":     (0, 0, 255),     # Red
-    "fire_truck":    (0, 80, 255),    # Deep Orange-Red
-    "police":        (255, 50, 50),   # Blue
+    "car":           (0, 200, 255),
+    "bus":           (0, 140, 255),
+    "truck":         (160, 32, 240),
+    "motorcycle":    (0, 255, 180),
+    "bicycle":       (50, 230, 100),
+    "auto_rickshaw": (0, 215, 255),
+    "ambulance":     (0, 0, 255),
+    "fire_truck":    (0, 80, 255),
+    "police":        (255, 50, 50),
 }
 
 
-# ── Centroid Tracker ─────────────────────────────────────────────────────────
+# ── Centroid Tracker (pure Python — no heavy deps) ────────────────────────────
 class CentroidTracker:
     """Frame-to-frame nearest-neighbour centroid tracker for speed estimation."""
 
@@ -67,6 +73,7 @@ class CentroidTracker:
 
         self._prev[camera_id] = new_hist[-40:]
         if speeds:
+            import numpy as np  # only needed here, very lightweight
             return round(float(np.mean(speeds)), 1)
         return 0.0
 
@@ -76,14 +83,40 @@ _tracker = CentroidTracker()
 
 # ── Main Detector ─────────────────────────────────────────────────────────────
 class YOLOv8Detector:
+    """
+    Full YOLO detector when USE_YOLO=true.
+    Lightweight stub when USE_YOLO=false (no heavy imports at all).
+    """
+
     def __init__(self):
         self.model = None
         self.using_yolo = False
-        self._init_model()
+        self._cv2 = None
+        self._np = None
+
+        if _USE_YOLO:
+            self._init_model()
+        else:
+            print("[INFO] YOLO disabled (USE_YOLO != true). GPS/TomTom traffic analysis is fully operational.")
+
+    # ── Heavy imports — only called when USE_YOLO=true ────────────────────────
+    def _load_cv2(self):
+        if self._cv2 is None:
+            import cv2 as _cv2
+            self._cv2 = _cv2
+        return self._cv2
+
+    def _load_np(self):
+        if self._np is None:
+            import numpy as _np
+            self._np = _np
+        return self._np
 
     def _init_model(self):
+        """Lazy-load YOLO model. Only called when USE_YOLO=true."""
         try:
-            from ultralytics import YOLO
+            from ultralytics import YOLO  # heavy import — inside function
+            from pathlib import Path
             model_path = Path(__file__).resolve().parents[2] / "yolov8n.pt"
             if not model_path.exists():
                 raise FileNotFoundError(f"YOLO model not found: {model_path}")
@@ -103,24 +136,31 @@ class YOLOv8Detector:
         camera_name: str = "Junction Camera",
         latitude: float = 17.4484,
         longitude: float = 78.3908,
-        source_type: str = "camera",  # 'camera', 'device', 'video', 'image'
+        source_type: str = "camera",
     ) -> Dict[str, Any]:
+        # Stub mode: YOLO is disabled on this deployment
+        if not _USE_YOLO:
+            return {
+                **self._empty_result(camera_id, camera_name, latitude, longitude),
+                "yolo_disabled": True,
+                "message": "YOLO detection is disabled on this deployment. Use GPS+TomTom traffic analysis.",
+            }
+
+        cv2 = self._load_cv2()
+        np = self._load_np()
+
         is_custom_input = bool(frame_base64 and len(frame_base64) > 100)
         img = self._decode_frame(frame_base64)
 
         if img is None:
-            # Never invent a camera frame or vehicle count. A real camera frame
-            # must be supplied by the frontend or a working authorized stream.
             return self._empty_result(camera_id, camera_name, latitude, longitude)
 
         if self.using_yolo and self.model is not None:
             counts, boxes, centroids = self._run_yolo(img, camera_id, is_custom_input)
         else:
-            # If YOLO is unavailable, do not silently fabricate detections.
-            # Contour detection is intentionally not used for vehicle counts.
             return self._empty_result(camera_id, camera_name, latitude, longitude)
 
-        # Run ByteTrack / Centroid Tracking Service to assign tracking IDs
+        # ByteTrack / Centroid Tracking
         try:
             from app.services.tracking_service import get_tracker_for_camera
             tracker = get_tracker_for_camera(camera_id)
@@ -131,27 +171,22 @@ class YOLOv8Detector:
 
         total = counts["total"]
 
-        # Speed estimation
         if is_custom_input:
-            raw_speed = _tracker.estimate_speed(camera_id, centroids)
-            avg_speed = raw_speed
+            avg_speed = _tracker.estimate_speed(camera_id, centroids)
         else:
-            raw_speed = _tracker.estimate_speed(camera_id, centroids)
-            avg_speed = raw_speed
+            avg_speed = _tracker.estimate_speed(camera_id, centroids)
 
-        # Congestion & density calculation
         road_capacity = 25
         congestion_pct = min(100.0, round(total / road_capacity * 100, 1))
 
-        # STEP 11: 5-level Road Status Classification
         if total == 0 or congestion_pct < 25.0:
-            density, wait = "Low",      round(1.0 + (congestion_pct / 25.0), 1)
+            density, wait = "Low",       round(1.0 + (congestion_pct / 25.0), 1)
             road_status = "Free Flow"
         elif congestion_pct < 50.0:
-            density, wait = "Medium",   round(3.0 + (congestion_pct - 25.0) / 10.0, 1)
+            density, wait = "Medium",    round(3.0 + (congestion_pct - 25.0) / 10.0, 1)
             road_status = "Moderate"
         elif congestion_pct < 75.0:
-            density, wait = "High",     round(7.0 + (congestion_pct - 50.0) / 5.0, 1)
+            density, wait = "High",      round(7.0 + (congestion_pct - 50.0) / 5.0, 1)
             road_status = "Heavy"
         elif congestion_pct < 90.0:
             density, wait = "Very High", round(12.0 + (congestion_pct - 75.0) / 5.0, 1)
@@ -160,7 +195,6 @@ class YOLOv8Detector:
             density, wait = "Very High", 18.0
             road_status = "Blocked"
 
-        # Safety flags
         emergency_detected = counts["ambulance"] > 0 or counts["fire_truck"] > 0 or counts["police"] > 0
         accident_detected  = False
         blockage = "Road Open"
@@ -169,7 +203,6 @@ class YOLOv8Detector:
         elif road_status == "Blocked":
             blockage = "Road Closed"
 
-        # Alert message
         alert = None
         if emergency_detected:
             alert = "🚨 EMERGENCY VEHICLE DETECTED – Clear the lane immediately!"
@@ -180,11 +213,11 @@ class YOLOv8Detector:
         elif blockage == "Road Closed" or road_status == "Blocked":
             alert = "🚧 ROAD CLOSED / BLOCKED AHEAD – Take alternate route."
 
-        # Annotate frame with tracked bounding boxes & tracking IDs
         annotated = self._annotate(
             img, tracked_boxes, counts, congestion_pct, density, avg_speed, road_status, camera_name
         )
         _, buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+        import base64
         frame_b64 = "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
         return {
@@ -204,10 +237,12 @@ class YOLOv8Detector:
             "emergency_vehicle_detected": emergency_detected,
             "emergency_alert_message": alert,
             "annotated_frame_base64": frame_b64,
+            "yolo_disabled": False,
         }
 
     # ── YOLO inference ────────────────────────────────────────────────────────
-    def _run_yolo(self, img: np.ndarray, camera_id: str, is_custom_input: bool):
+    def _run_yolo(self, img, camera_id: str, is_custom_input: bool):
+        np = self._load_np()
         counts = self._empty_counts()
         boxes: List[Tuple] = []
         centroids: List[Tuple[int, int]] = []
@@ -226,7 +261,6 @@ class YOLOv8Detector:
                 w_box, h_box = (x2 - x1), (y2 - y1)
                 aspect_ratio = float(w_box) / float(h_box) if h_box > 0 else 1.0
 
-                # Heuristic classification for Auto Rickshaw & Emergency Vehicles from COCO detections
                 if label == "car" and 1.0 <= aspect_ratio <= 1.45 and w_box < 100:
                     label = "auto_rickshaw"
                 elif label == "motorcycle" and aspect_ratio < 0.9 and w_box > 45:
@@ -248,8 +282,10 @@ class YOLOv8Detector:
         counts["emergency"] = counts["ambulance"] + counts["fire_truck"] + counts["police"]
         return counts, boxes, centroids
 
-    # ── Contour Detection for custom images when YOLO fails/absent ────────────
-    def _contour_detection(self, img: np.ndarray):
+    # ── Contour Detection for custom images when YOLO fails ──────────────────
+    def _contour_detection(self, img):
+        cv2 = self._load_cv2()
+        np = self._load_np()
         counts = self._empty_counts()
         boxes: List[Tuple] = []
         centroids: List[Tuple[int, int]] = []
@@ -289,8 +325,9 @@ class YOLOv8Detector:
 
         return counts, boxes, centroids
 
-    # ── Heuristic fallback (Simulation camera only) ───────────────────────────
-    def _heuristic(self, img: np.ndarray, camera_id: str):
+    # ── Heuristic fallback ────────────────────────────────────────────────────
+    def _heuristic(self, img, camera_id: str):
+        np = self._load_np()
         h, w, _ = img.shape
         seed = int(time.time() // 10) + abs(hash(camera_id)) % 1000
         np.random.seed(seed % 10000)
@@ -352,11 +389,14 @@ class YOLOv8Detector:
         return counts, boxes, centroids
 
     # ── Frame decoder ─────────────────────────────────────────────────────────
-    def _decode_frame(self, frame_b64: Optional[str]) -> Optional[np.ndarray]:
+    def _decode_frame(self, frame_b64: Optional[str]) -> Optional[object]:
         if not frame_b64:
             return None
         try:
-            raw = frame_b64.split(",")[-1]
+            import base64
+            cv2 = self._load_cv2()
+            np = self._load_np()
+            raw  = frame_b64.split(",")[-1]
             data = base64.b64decode(raw)
             arr  = np.frombuffer(data, np.uint8)
             return cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -385,47 +425,9 @@ class YOLOv8Detector:
             "annotated_frame_base64": None,
         }
 
-    # ── Synthetic road frame ──────────────────────────────────────────────────
-    def _synthetic_frame(self, camera_name: str) -> np.ndarray:
-        W, H = 800, 480
-        img = np.zeros((H, W, 3), np.uint8)
-
-        for y in range(H // 2):
-            v = int(30 + (y / (H / 2)) * 35)
-            img[y] = (v + 15, v + 5, v)
-
-        img[H // 2:] = (48, 52, 58)
-
-        road = np.array([
-            [int(W * 0.08), H],
-            [int(W * 0.92), H],
-            [int(W * 0.64), int(H * 0.22)],
-            [int(W * 0.36), int(H * 0.22)],
-        ], np.int32)
-        cv2.fillPoly(img, [road], (42, 46, 54))
-
-        for y_pos in range(int(H * 0.22), H, 32):
-            ratio = (y_pos - H * 0.22) / (H * 0.78)
-            lx = int(W * 0.36 - (W * 0.36 - W * 0.08) * ratio + W * 0.14 * ratio)
-            rx = int(W * 0.64 + (W * 0.92 - W * 0.64) * ratio - W * 0.14 * ratio)
-            thickness = max(1, int(1 + ratio * 3))
-            cv2.line(img, (lx, y_pos), (lx, min(H, y_pos + 18)), (200, 200, 200), thickness)
-            cv2.line(img, (rx, y_pos), (rx, min(H, y_pos + 18)), (200, 200, 200), thickness)
-
-        return img
-
     # ── Frame annotator ───────────────────────────────────────────────────────
-    def _annotate(
-        self,
-        img: np.ndarray,
-        boxes: List[Tuple],
-        counts: Dict[str, int],
-        congestion: float,
-        density: str,
-        speed: float,
-        road_status: str,
-        camera_name: str,
-    ) -> np.ndarray:
+    def _annotate(self, img, boxes, counts, congestion, density, speed, road_status, camera_name):
+        cv2 = self._load_cv2()
         out = img.copy()
         H, W, _ = out.shape
 
@@ -489,5 +491,8 @@ class YOLOv8Detector:
         }
 
 
-# Singleton
+# ── Singleton ─────────────────────────────────────────────────────────────────
+# Created at import time but only loads YOLO weights when USE_YOLO=true.
+# When USE_YOLO=false (Render deployment), this is a pure-Python stub with
+# zero AI library imports — startup uses ~50 MB instead of 1+ GB.
 yolo_detector = YOLOv8Detector()
