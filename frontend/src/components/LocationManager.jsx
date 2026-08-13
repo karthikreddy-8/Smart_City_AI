@@ -53,16 +53,40 @@ const LocationManager = ({ onLocationSelect, onLiveTraffic }) => {
     setTrafficLoading(true);
     setTrafficError('');
     try {
-      const res = await liveTrafficAPI.getLocationTraffic(latitude, longitude, accuracy);
-      if (res?.data?.ok === false) {
-        throw new Error(res.data.message || 'Live traffic data unavailable.');
+      let res;
+      try {
+        res = await liveTrafficAPI.getLocationTraffic(latitude, longitude, accuracy);
+      } catch (err) {
+        // If the deployed backend is one version behind, use the existing
+        // area-analysis endpoint rather than showing a misleading "Not Found".
+        if (err?.response?.status === 404) {
+          res = await liveTrafficAPI.getAreaAnalysis(latitude, longitude, accuracy);
+        } else {
+          throw err;
+        }
       }
+
+      if (res?.data?.ok === false) {
+        const providerMessage =
+          res.data.provider_errors?.[0]?.provider_error_message ||
+          res.data.provider_errors?.[0]?.detail?.detailedError?.message;
+        throw new Error(providerMessage || res.data.message || 'Live traffic data is unavailable for this location.');
+      }
+
       onLiveTraffic?.(res.data);
       return res.data;
     } catch (err) {
       console.warn('Location traffic notice:', err);
-      const message = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Live traffic data is unavailable.';
+      const status = err?.response?.status;
+      const serverMessage =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error;
+      const message = status === 404
+        ? 'Live traffic service is not deployed yet. Redeploy the updated Render backend.'
+        : serverMessage || err?.message || 'Live traffic data is temporarily unavailable.';
       setTrafficError(message);
+      // Keep GPS success visible even when the traffic provider is unavailable.
       onLiveTraffic?.(null);
       return null;
     } finally {
@@ -126,8 +150,16 @@ const LocationManager = ({ onLocationSelect, onLiveTraffic }) => {
       onLocationSelect?.(location);
 
       const traffic = await loadLocationTraffic(latitude, longitude, safeAccuracy);
-      if (!fullAddress && traffic?.area_name) {
-        setCurrentLocation((prev) => ({ ...prev, name: [traffic.area_name, traffic.city].filter(Boolean).join(', ') || prev.name }));
+      if (traffic?.area_name) {
+        setCurrentLocation((prev) => ({
+          ...prev,
+          name: [traffic.area_name, traffic.city].filter(Boolean).join(', ') || prev.name,
+          traffic: {
+            level: traffic.overall_traffic_level,
+            estimatedVehiclesPerHour: traffic.estimated_vehicles_per_hour,
+            averageSpeedKmh: traffic.average_speed_kmh,
+          },
+        }));
       }
     };
 
@@ -241,8 +273,9 @@ const LocationManager = ({ onLocationSelect, onLiveTraffic }) => {
       )}
 
       {trafficError && (
-        <div className="mt-4 p-3 rounded-2xl bg-rose-950/30 border border-rose-800/60 text-xs text-rose-300">
-          {trafficError}
+        <div className="mt-4 p-3 rounded-2xl bg-amber-950/30 border border-amber-800/60 text-xs text-amber-200">
+          <div className="font-bold">Location detected, but live traffic is unavailable.</div>
+          <div className="mt-1 text-amber-300/80">{trafficError}</div>
         </div>
       )}
 

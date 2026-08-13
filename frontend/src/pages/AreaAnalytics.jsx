@@ -382,10 +382,27 @@ const AreaAnalyticsInner = () => {
         console.warn('Reverse geocode notice:', e);
       }
 
-      const res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      let res;
+      try {
+        res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      } catch (err) {
+        if (err?.response?.status === 404) {
+          res = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy);
+        } else {
+          throw err;
+        }
+      }
       if (res?.data?.ok === false) throw new Error(res.data.message || 'Live traffic data unavailable.');
       setAreaAnalysis(res.data);
       setLiveCameras([]);
+      const liveArea = res.data?.area_name;
+      const liveCity = res.data?.city;
+      const liveState = res.data?.state;
+      const liveCountry = res.data?.country;
+      if (liveArea) setSelectedArea(liveArea);
+      if (liveCity) setSelectedCity(liveCity);
+      if (liveState) setSelectedState(liveState);
+      if (liveCountry) setSelectedCountry(liveCountry);
     };
 
     const handleGpsError = (err) => {

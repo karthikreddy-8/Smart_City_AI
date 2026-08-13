@@ -187,7 +187,16 @@ const LiveTrafficInner = () => {
   const runAreaTrafficAnalysis = async (lat, lng, accuracy = 15.0, silent = false) => {
     if (!silent) setConnState(STATE.CONNECTING);
     try {
-      const res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      let res;
+      try {
+        res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      } catch (err) {
+        if (err?.response?.status === 404) {
+          res = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy);
+        } else {
+          throw err;
+        }
+      }
       if (res?.data?.ok === false) throw new Error(res.data.message || 'Live traffic data unavailable.');
       if (res?.data) {
         setAreaAnalysis(res.data);
@@ -295,13 +304,44 @@ const LiveTrafficInner = () => {
       }
 
       setDetectionStep(3);
-      const trafficRes = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
-      if (trafficRes?.data?.ok === false) throw new Error(trafficRes.data.message || 'Live traffic data unavailable.');
-      setAreaAnalysis(trafficRes.data);
-      setDetectionData(null);
-      setCameras([]);
-      setSelectedCamera(null);
-      setDetectionStep(4);
+      let trafficRes;
+      try {
+        trafficRes = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+      } catch (err) {
+        if (err?.response?.status === 404) {
+          try { trafficRes = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy); } catch (_) {}
+        } else {
+          console.warn('Location traffic notice:', err);
+        }
+      }
+
+      // GPS success must not depend on traffic provider availability.
+      // If traffic data came back as ok:false or is missing, show GPS success
+      // and a non-fatal traffic notice instead of a full error banner.
+      if (trafficRes?.data?.ok === false) {
+        console.warn('Traffic provider returned ok:false:', trafficRes.data.message);
+        setErrorMsg(trafficRes.data.message || 'Live traffic data is temporarily unavailable for this area.');
+        setAreaAnalysis(null);
+        setDetectionData(null);
+        setCameras([]);
+        setSelectedCamera(null);
+        // Mark as LIVE so the GPS success panel is shown
+        setConnState(STATE.LIVE);
+        setDetectionStep(4);
+      } else if (trafficRes?.data) {
+        setAreaAnalysis(trafficRes.data);
+        setDetectionData(null);
+        setCameras([]);
+        setSelectedCamera(null);
+        setDetectionStep(4);
+      } else {
+        // No traffic data at all — still show GPS success
+        setAreaAnalysis(null);
+        setDetectionData(null);
+        setCameras([]);
+        setSelectedCamera(null);
+        setDetectionStep(4);
+      }
     };
 
     const handleGpsError = (err) => {
@@ -321,8 +361,12 @@ const LiveTrafficInner = () => {
       async (pos) => {
         try {
           await processPosition(pos);
+          // If connState wasn't set to LIVE inside processPosition,
+          // set it now so the GPS result panel is always visible.
+          setConnState((prev) => prev !== STATE.LIVE ? STATE.LIVE : prev);
         } catch (e) {
           console.warn('Location traffic notice:', e);
+          setConnState(STATE.ERROR);
           setErrorMsg(e?.response?.data?.message || e?.response?.data?.detail || e?.message || 'Live traffic data is unavailable for this location.');
           setAreaAnalysis(null);
           setDetectionStep(0);
@@ -334,8 +378,16 @@ const LiveTrafficInner = () => {
         if (err?.code === 2 || err?.code === 3) {
           navigator.geolocation.getCurrentPosition(
             async (pos) => {
-              try { await processPosition(pos); }
-              catch (e) { setErrorMsg(e?.message || 'Live traffic data is unavailable for this location.'); setAreaAnalysis(null); setDetectionStep(0); }
+              try {
+                await processPosition(pos);
+                setConnState((prev) => prev !== STATE.LIVE ? STATE.LIVE : prev);
+              }
+              catch (e) {
+                setConnState(STATE.ERROR);
+                setErrorMsg(e?.message || 'Live traffic data is unavailable for this location.');
+                setAreaAnalysis(null);
+                setDetectionStep(0);
+              }
               finally { setGpsLoading(false); }
             },
             handleGpsError,

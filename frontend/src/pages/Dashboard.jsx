@@ -252,10 +252,34 @@ const Dashboard = () => {
         <>
           {/* KPIs Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard icon={<FaCar />} title="Total Vehicles" value={kpis.total_vehicles?.toLocaleString()} color="text-blue-400" />
-            <StatCard icon={<FaTachometerAlt />} title="Avg Speed" value={`${kpis.average_speed} km/h`} subValue={`Max: ${kpis.max_speed} | Min: ${kpis.min_speed}`} color="text-emerald-400" />
-            <StatCard icon={<FaChartLine />} title="Traffic Density" value={`${kpis.traffic_density}`} color="text-indigo-400" />
-            <StatCard icon={<FaExclamationTriangle />} title="Congestion Index" value={`${kpis.congestion_index}`} color="text-rose-400" />
+            <StatCard
+              icon={<FaCar />}
+              title={liveVehicleData ? "Estimated Vehicles / Hour" : "Total Vehicles"}
+              value={(liveVehicleData?.estimated_vehicles_per_hour ?? liveVehicleData?.estimated_vehicles_in_area ?? kpis.total_vehicles)?.toLocaleString()}
+              subValue={liveVehicleData ? "Live location traffic estimate" : undefined}
+              color="text-blue-400"
+            />
+            <StatCard
+              icon={<FaTachometerAlt />}
+              title="Avg Speed"
+              value={`${liveVehicleData?.average_speed_kmh ?? kpis.average_speed} km/h`}
+              subValue={liveVehicleData ? "Current location" : `Max: ${kpis.max_speed} | Min: ${kpis.min_speed}`}
+              color="text-emerald-400"
+            />
+            <StatCard
+              icon={<FaChartLine />}
+              title="Traffic Density"
+              value={`${liveVehicleData?.traffic_density_pct ?? kpis.traffic_density}%`}
+              subValue={liveVehicleData ? "Live location" : undefined}
+              color="text-indigo-400"
+            />
+            <StatCard
+              icon={<FaExclamationTriangle />}
+              title="Congestion Index"
+              value={`${liveVehicleData?.congestion_pct ?? kpis.congestion_index}%`}
+              subValue={liveVehicleData ? "Live location" : undefined}
+              color="text-rose-400"
+            />
 
             <StatCard icon={<FaHeartbeat />} title="Road Health" value={`${kpis.road_health_score}%`} color="text-violet-400" />
             <StatCard icon={<FaGasPump />} title="Fuel Wasted" value={`${kpis.fuel_waste_liters} L`} color="text-amber-400" />

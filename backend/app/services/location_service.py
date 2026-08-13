@@ -31,27 +31,42 @@ def _tomtom_reverse_geocode(latitude: float, longitude: float) -> Optional[Dict[
                 "TomTom-Api-Version": "2",
                 "TomTom-Api-Key": key,
                 "Accept": "application/json",
-                "Attributes": "results(*,address(*))",
+                # Request the full result object; Orbis v2 requires an Attributes
+                # header and the exact nested syntax varies by endpoint version.
+                # "results" is the safest supported value.
+                "Attributes": "results",
             },
             timeout=7,
         )
         if response.status_code != 200:
             print(f"[WARN] TomTom reverse geocode HTTP {response.status_code}")
             return None
-        rows = response.json().get("results") or []
+        payload = response.json()
+        rows = payload.get("results") or []
         if not rows:
+            print("[WARN] TomTom reverse geocode returned no results.")
             return None
-        addr = rows[0].get("address") or {}
+        first = rows[0] or {}
+        addr = first.get("address") or {}
         return {
             "country": addr.get("country") or "Unknown Country",
             "state": addr.get("countrySubdivision") or "Unknown State",
             "city": addr.get("municipality") or "Unknown City",
             "district": addr.get("countrySecondarySubdivision") or addr.get("countryTertiarySubdivision") or addr.get("municipality") or "Unknown District",
-            "area": addr.get("neighborhood") or addr.get("municipalitySubdivision") or addr.get("municipalitySecondarySubdivision") or addr.get("countryTertiarySubdivision") or addr.get("municipality") or "Unknown Area",
+            "area": (
+                addr.get("neighborhood")
+                or addr.get("municipalitySubdivision")
+                or addr.get("municipalitySecondarySubdivision")
+                or addr.get("countryTertiarySubdivision")
+                or addr.get("countrySecondarySubdivision")
+                or addr.get("municipality")
+                or "Unknown Area"
+            ),
             "road_name": addr.get("street") or "Unknown Road",
             "postal_code": addr.get("postalCode") or "Unknown Postal Code",
             "latitude": round(latitude, 5),
             "longitude": round(longitude, 5),
+            "provider": "TomTom Reverse Geocoding",
         }
     except requests.RequestException as exc:
         print(f"[WARN] TomTom reverse geocode failed: {exc}")
@@ -117,6 +132,7 @@ def reverse_geocode(latitude: float, longitude: float) -> Dict[str, Any]:
                 "postal_code": postcode,
                 "latitude": round(latitude, 5),
                 "longitude": round(longitude, 5),
+                "provider": "OpenStreetMap Nominatim",
             }
     except Exception as e:
         print(f"[WARN] Reverse geocode request failed: {e}")
@@ -131,6 +147,7 @@ def reverse_geocode(latitude: float, longitude: float) -> Dict[str, Any]:
         "postal_code": "Unknown",
         "latitude": round(latitude, 5),
         "longitude": round(longitude, 5),
+        "provider": "GPS coordinates only",
     }
 
 

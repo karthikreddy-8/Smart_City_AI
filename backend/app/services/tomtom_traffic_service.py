@@ -5,18 +5,29 @@ This service intentionally does NOT use the device camera and does NOT use the
 historical CSV dataset for current traffic. GPS identifies the area; TomTom
 provides live road-segment speed/travel-time conditions.
 
+When TomTom is unavailable (missing/invalid API key or network error), a
+time-of-day-aware synthetic fallback is returned so that Detect Location never
+fails with an error banner — the user always sees their GPS location plus a
+traffic estimate clearly labelled as estimated.
+
 Vehicle values returned by this service are ESTIMATED TRAFFIC VOLUME per hour,
 not an exact vehicle count. The Traffic Flow API provides speed, travel time,
 confidence and road closure, not a raw vehicle counter.
 """
 import math
 import os
+import datetime
+import random
 from typing import Any, Dict, List, Optional
 
 import requests
 
 TOMTOM_BASE = "https://api.tomtom.com/traffic/services/4/flowSegmentData"
-API_KEY = os.getenv("TOMTOM_API_KEY", "").strip()
+
+
+def _get_api_key() -> str:
+    """Read the key at request time so Render/local env changes do not require a code change."""
+    return os.getenv("TOMTOM_API_KEY", "").strip()
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -65,17 +76,94 @@ def _estimate_volume_per_hour(current_speed: float, free_flow_speed: float, frc:
     return int(round(_baseline_volume_per_hour(frc) * multiplier))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TIME-OF-DAY SYNTHETIC FALLBACK
+# Used when TomTom API is unavailable (no key, 401, 403, network error).
+# Returns realistic traffic data based on local time patterns so that
+# Detect Location always succeeds with meaningful data.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _time_based_congestion() -> Dict[str, Any]:
+    """
+    Return a congestion estimate based on the current hour of day.
+    Peaks at morning (8-10) and evening (17-20) rush hours.
+    """
+    hour = datetime.datetime.now().hour
+    # Deterministic seed from hour so results are stable per hour
+    rng = random.Random(hour * 7 + 13)
+
+    # Base congestion curve (typical urban India)
+    if 7 <= hour <= 10:      # Morning peak
+        base_cong = rng.uniform(52, 72)
+        base_speed = rng.uniform(18, 30)
+    elif 17 <= hour <= 20:   # Evening peak
+        base_cong = rng.uniform(60, 80)
+        base_speed = rng.uniform(15, 25)
+    elif 11 <= hour <= 16:   # Midday moderate
+        base_cong = rng.uniform(28, 45)
+        base_speed = rng.uniform(30, 45)
+    elif 21 <= hour <= 23:   # Late evening light
+        base_cong = rng.uniform(15, 30)
+        base_speed = rng.uniform(40, 55)
+    else:                    # Night / early morning
+        base_cong = rng.uniform(5, 18)
+        base_speed = rng.uniform(50, 70)
+
+    return {
+        "congestion_pct": round(base_cong, 1),
+        "current_speed_kmh": round(base_speed, 1),
+        "free_flow_speed_kmh": round(base_speed / max(0.1, 1.0 - base_cong / 120), 1),
+    }
+
+
+def _synthetic_segment(latitude: float, longitude: float, index: int = 0) -> Dict[str, Any]:
+    """
+    Build a synthetic traffic segment for a GPS point when TomTom is unavailable.
+    Data is time-of-day realistic and labelled as estimated.
+    """
+    td = _time_based_congestion()
+    congestion = td["congestion_pct"]
+    current_speed = td["current_speed_kmh"]
+    free_flow_speed = td["free_flow_speed_kmh"]
+    level = _traffic_level(congestion)
+
+    # Create small synthetic geometry around the point
+    offset = 0.002 * (index + 1)
+    segment_points = [
+        [round(latitude - offset, 5), round(longitude, 5)],
+        [round(latitude, 5), round(longitude, 5)],
+        [round(latitude + offset, 5), round(longitude, 5)],
+    ]
+
+    frc = "FRC3"
+    return {
+        "ok": True,
+        "latitude": latitude,
+        "longitude": longitude,
+        "current_speed_kmh": current_speed,
+        "free_flow_speed_kmh": free_flow_speed,
+        "current_travel_time_s": round(500 / max(current_speed, 1) * 3.6, 1),
+        "free_flow_travel_time_s": round(500 / max(free_flow_speed, 1) * 3.6, 1),
+        "confidence": 0.70,
+        "road_closure": False,
+        "frc": frc,
+        "congestion_pct": congestion,
+        "traffic_level": level,
+        "estimated_vehicles_per_hour": _estimate_volume_per_hour(current_speed, free_flow_speed, frc),
+        "segment_points": segment_points,
+        "_synthetic": True,
+    }
+
+
 def fetch_flow_segment(latitude: float, longitude: float, timeout: float = 8.0) -> Dict[str, Any]:
-    if not API_KEY:
-        return {
-            "ok": False,
-            "error": "TOMTOM_API_KEY is not configured.",
-            "latitude": latitude,
-            "longitude": longitude,
-        }
+    api_key = _get_api_key()
+    if not api_key:
+        # No key configured — return synthetic estimate instead of failing
+        print("[INFO] TOMTOM_API_KEY not set — using time-of-day traffic estimate.")
+        return _synthetic_segment(latitude, longitude)
 
     params = {
-        "key": API_KEY,
+        "key": api_key,
         "point": f"{latitude},{longitude}",
         "unit": "kmph",
         "thickness": 10,
@@ -88,18 +176,22 @@ def fetch_flow_segment(latitude: float, longitude: float, timeout: float = 8.0) 
             headers={"Accept": "application/json"},
             timeout=timeout,
         )
+
+        # 401 / 403 = API key invalid or quota exceeded → use synthetic fallback
+        if response.status_code in (401, 403):
+            print(f"[WARN] TomTom API key rejected (HTTP {response.status_code}). "
+                  "Using time-of-day traffic estimate. "
+                  "Please update TOMTOM_API_KEY in backend/.env")
+            return _synthetic_segment(latitude, longitude)
+
         if response.status_code != 200:
             try:
                 detail = response.json()
             except Exception:
                 detail = response.text[:300]
-            return {
-                "ok": False,
-                "error": f"TomTom traffic API returned HTTP {response.status_code}.",
-                "detail": detail,
-                "latitude": latitude,
-                "longitude": longitude,
-            }
+            print(f"[WARN] TomTom traffic API returned HTTP {response.status_code}. "
+                  "Using synthetic fallback.")
+            return _synthetic_segment(latitude, longitude)
 
         root = response.json().get("flowSegmentData", {})
         current_speed = float(root.get("currentSpeed", 0) or 0)
@@ -140,13 +232,8 @@ def fetch_flow_segment(latitude: float, longitude: float, timeout: float = 8.0) 
             "segment_points": segment_points,
         }
     except requests.RequestException as exc:
-        return {
-            "ok": False,
-            "error": "Unable to reach the live traffic provider.",
-            "detail": str(exc),
-            "latitude": latitude,
-            "longitude": longitude,
-        }
+        print(f"[WARN] TomTom network error: {exc}. Using synthetic fallback.")
+        return _synthetic_segment(latitude, longitude)
 
 
 def _sample_points(latitude: float, longitude: float, radius_km: float) -> List[List[float]]:
@@ -185,14 +272,14 @@ def analyze_location(
             unique[key] = item
 
     segments = list(unique.values())
+
+    # If all TomTom calls failed for non-auth reasons, build synthetic fallback
     if not segments:
-        errors = [s.get("error") for s in raw_segments if s.get("error")]
-        return {
-            "ok": False,
-            "message": errors[0] if errors else "No live traffic flow is available for this location.",
-            "latitude": latitude,
-            "longitude": longitude,
-        }
+        print("[WARN] All traffic segment fetches failed. Using full synthetic fallback.")
+        segments = [_synthetic_segment(lat, lng, i) for i, (lat, lng) in enumerate(points)]
+
+    is_synthetic = any(s.get("_synthetic") for s in segments)
+    data_source = "Time-of-Day Traffic Estimate" if is_synthetic else "TomTom Traffic Flow"
 
     avg_speed = round(sum(s["current_speed_kmh"] for s in segments) / len(segments), 1)
     avg_congestion = round(sum(s["congestion_pct"] for s in segments) / len(segments), 1)
@@ -210,9 +297,16 @@ def analyze_location(
     else:
         wait = round(14 + avg_congestion / 6, 1)
 
+    message = (
+        "Traffic estimate based on time-of-day patterns. "
+        "For live data, add a valid TOMTOM_API_KEY in backend/.env"
+        if is_synthetic
+        else "Live traffic conditions loaded from location-based traffic flow data."
+    )
+
     return {
         "ok": True,
-        "data_source": "TomTom Traffic Flow",
+        "data_source": data_source,
         "vehicle_count_type": "estimated_vehicles_per_hour",
         "area_name": (location or {}).get("area") or "Current Area",
         "city": (location or {}).get("city") or "Current City",
@@ -236,14 +330,15 @@ def analyze_location(
         "offline_cameras_count": 0,
         "confidence_pct": round(avg_confidence * 100, 1),
         "road_closures": closed_count,
+        "is_synthetic": is_synthetic,
         "traffic_by_road": [
             {
-                "road_name": f"Live road segment {i + 1}",
+                "road_name": f"Road segment {i + 1}",
                 "traffic_level": s["traffic_level"],
                 "level_icon": {"LOW": "🟢", "MODERATE": "🟡", "HIGH": "🟠", "VERY HIGH": "🔴", "BLOCKED": "⛔"}.get(s["traffic_level"], "⚪"),
                 "congestion_pct": s["congestion_pct"],
                 "vehicle_count": s["estimated_vehicles_per_hour"],
-                "camera_status": "Live Traffic Provider",
+                "camera_status": "Estimated" if s.get("_synthetic") else "Live Traffic Provider",
                 "current_speed_kmh": s["current_speed_kmh"],
                 "free_flow_speed_kmh": s["free_flow_speed_kmh"],
                 "confidence_pct": round(s["confidence"] * 100, 1),
@@ -269,7 +364,7 @@ def analyze_location(
             for s in segments
         ],
         "cameras_coverage": [],
-        "message": "Live traffic conditions loaded from location-based traffic flow data.",
+        "message": message,
     }
 
 

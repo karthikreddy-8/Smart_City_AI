@@ -99,15 +99,20 @@ app = FastAPI(
 # ── CORS ───────────────────────────────────────────────────────────────────────
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
 if cors_origins_env and cors_origins_env != "*":
-    cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    cors_origins = [o.strip().rstrip("/") for o in cors_origins_env.split(",") if o.strip()]
+    cors_allow_credentials = True
 else:
+    # The app uses a Bearer Authorization header, not cookies. When no explicit
+    # origins are configured, allow cross-origin requests without credential mode
+    # so mobile Vercel -> Render requests are not blocked by wildcard CORS.
     cors_origins = ["*"]
+    cors_allow_credentials = False
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_credentials=True,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -155,10 +160,12 @@ def detailed_health_check():
     except Exception as yerr:
         yolo_status = f"UNAVAILABLE ({yerr})"
 
+    tomtom_configured = bool(os.getenv("TOMTOM_API_KEY", "").strip())
     return {
         "Backend": "ONLINE",
         "YOLO": yolo_status,
         "Database": db_status,
-        "Camera": "AVAILABLE"
+        "Camera": "AVAILABLE",
+        "TrafficProvider": "TOMTOM_CONFIGURED" if tomtom_configured else "TOMTOM_API_KEY_MISSING",
     }
 
