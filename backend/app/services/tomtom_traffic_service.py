@@ -239,7 +239,7 @@ def fetch_flow_segment(latitude: float, longitude: float, timeout: float = 8.0) 
 def _sample_points(latitude: float, longitude: float, radius_km: float) -> List[List[float]]:
     # Center + four nearby points. This gives an area-level view without
     # pretending that a single road represents the entire area.
-    radius_km = max(0.25, min(float(radius_km), 3.0))
+    radius_km = max(0.25, min(float(radius_km), 15.0))
     dlat = radius_km / 111.0
     dlng = radius_km / max(111.0 * math.cos(math.radians(latitude)), 1.0)
     return [
@@ -290,12 +290,19 @@ def analyze_location(
 
     if level == "LOW":
         wait = round(1 + avg_congestion / 20, 1)
+        delay_level = "Low"
     elif level == "MODERATE":
         wait = round(3 + avg_congestion / 12, 1)
+        delay_level = "Moderate"
     elif level == "HIGH":
         wait = round(7 + avg_congestion / 8, 1)
+        delay_level = "High"
+    elif level == "VERY HIGH":
+        wait = round(14 + avg_congestion / 6, 1)
+        delay_level = "Severe"
     else:
         wait = round(14 + avg_congestion / 6, 1)
+        delay_level = "Blocked"
 
     message = (
         "Traffic estimate based on time-of-day patterns. "
@@ -320,6 +327,7 @@ def analyze_location(
         "overall_traffic_icon": {
             "LOW": "🟢", "MODERATE": "🟡", "HIGH": "🟠", "VERY HIGH": "🔴", "BLOCKED": "⛔"
         }.get(level, "⚪"),
+        "delay_level": delay_level,
         "estimated_vehicles_in_area": estimated_volume,
         "estimated_vehicles_per_hour": estimated_volume,
         "traffic_density_pct": avg_congestion,

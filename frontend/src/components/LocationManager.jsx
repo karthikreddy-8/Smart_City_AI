@@ -99,13 +99,6 @@ const LocationManager = ({ onLocationSelect, onLiveTraffic }) => {
     setTrafficError('');
     setManualForm(false);
 
-    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-      setLocationStatus('error');
-      setManualForm(true);
-      setTrafficError('Location requires a secure HTTPS connection. Please open the deployed HTTPS website.');
-      return;
-    }
-
     if (!navigator.geolocation) {
       setLocationStatus('error');
       setManualForm(true);
@@ -237,7 +230,7 @@ const LocationManager = ({ onLocationSelect, onLiveTraffic }) => {
           {locationStatus === 'idle' && (
             <>
               <button onClick={requestLocation} className="btn-primary text-xs flex items-center gap-2 px-4 py-2">
-                <FaLocationArrow /> Detect GPS
+                <FaLocationArrow /> Use My Location
               </button>
               <button onClick={() => setManualForm(true)} className="btn-secondary text-xs flex items-center gap-2 px-4 py-2">
                 <FaSearch /> Search Location

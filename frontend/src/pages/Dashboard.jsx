@@ -87,11 +87,11 @@ const Dashboard = () => {
   const handleLocationSelect = (location) => {
     setSelectedLocation(location);
     if (location && typeof location === 'string') {
-      setGlobalFilters(prev => ({ ...prev, road_name: location }));
-    } else if (location?.name) {
-      setGlobalFilters(prev => ({ ...prev, road_name: location.name }));
+      setGlobalFilters(prev => ({ ...prev, road_name: location, latitude: null, longitude: null }));
+    } else if (location?.latitude && location?.longitude) {
+      setGlobalFilters(prev => ({ ...prev, road_name: location.name, latitude: location.latitude, longitude: location.longitude }));
     } else if (!location) {
-      setGlobalFilters(prev => ({ ...prev, road_name: null }));
+      setGlobalFilters(prev => ({ ...prev, road_name: null, latitude: null, longitude: null }));
       setLiveVehicleData(null);
     }
   };

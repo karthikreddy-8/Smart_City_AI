@@ -68,12 +68,12 @@ export const liveTrafficAPI = {
       params: { latitude: lat, longitude: lng, accuracy_meters: accuracy, radius_km: radiusKm }
     }),
   // NOTE: getAreaAnalysis is a single canonical definition — no duplicates.
-  getAreaAnalysis: (lat, lng, accuracy = 15.0) =>
+  getAreaAnalysis: (lat, lng, accuracy = 15.0, radiusKm = 1.5) =>
     api.get('/live-traffic/area-analysis', {
-      params: { latitude: lat, longitude: lng, accuracy_meters: accuracy }
+      params: { latitude: lat, longitude: lng, accuracy_meters: accuracy, radius_km: radiusKm }
     }),
   getLocations: () => api.get('/live-traffic/locations'),
-  getAreaQuery: (area, city, state, country) => api.get('/live-traffic/area-query', { params: { area, city, state, country } }),
+  getAreaQuery: (area, city, state, country, radiusKm = 1.5) => api.get('/live-traffic/area-query', { params: { area, city, state, country, radius_km: radiusKm } }),
 };
 
 

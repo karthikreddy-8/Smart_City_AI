@@ -12,6 +12,16 @@ import {
   FaFileUpload, FaShieldAlt, FaWifi, FaCarSide
 } from 'react-icons/fa';
 import { analyticsAPI, liveTrafficAPI } from '../services/api';
+import {
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
+  Title, Tooltip, Legend
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale, LinearScale, BarElement,
+  Title, Tooltip, Legend
+);
 
 // Fix Leaflet icon issue
 try {
@@ -135,6 +145,7 @@ const AreaAnalyticsInner = () => {
   const [liveCameras, setLiveCameras] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [userLocationAddress, setUserLocationAddress] = useState(null);
+  const [radiusKm, setRadiusKm] = useState(5); // Configurable radius (2, 5, or 10 km)
 
   const [pageLoading, setPageLoading] = useState(true);
   const [areaLoading, setAreaLoading] = useState(false);
@@ -226,14 +237,14 @@ const AreaAnalyticsInner = () => {
   };
 
   /* ── Fetch Real-Time Area Analytics ────────────────────────────────────── */
-  const fetchAreaAnalytics = async (area, city, state, country) => {
+  const fetchAreaAnalytics = async (area, city, state, country, radiusVal = radiusKm) => {
     setAreaLoading(true);
     setStatusMessage('');
     setUserLocation(null);
     setUserLocationAddress(null);
 
     try {
-      const res = await liveTrafficAPI.getAreaQuery(area, city, state, country);
+      const res = await liveTrafficAPI.getAreaQuery(area, city, state, country, radiusVal);
       if (res?.data) {
         setAreaAnalysis(res.data);
         if (Array.isArray(res.data.cameras_coverage)) {
@@ -384,10 +395,10 @@ const AreaAnalyticsInner = () => {
 
       let res;
       try {
-        res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, 1.5);
+        res = await liveTrafficAPI.getLocationTraffic(lat, lng, accuracy, radiusKm);
       } catch (err) {
         if (err?.response?.status === 404) {
-          res = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy);
+          res = await liveTrafficAPI.getAreaAnalysis(lat, lng, accuracy, radiusKm);
         } else {
           throw err;
         }
@@ -518,7 +529,7 @@ const AreaAnalyticsInner = () => {
             Select Area Hierarchy
           </span>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {/* Country */}
             <div>
               <label className="text-[10px] font-bold text-slate-400 block mb-1">Country</label>
@@ -568,6 +579,20 @@ const AreaAnalyticsInner = () => {
               >
                 <option value="">Select Area</option>
                 {availableAreas.map(area => <option key={area} value={area}>{area}</option>)}
+              </select>
+            </div>
+
+            {/* Radius Selector */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 block mb-1">Search Radius</label>
+              <select
+                value={radiusKm}
+                onChange={(e) => handleRadiusChange(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-bold text-cyan-400 focus:ring-2 focus:ring-sky-500"
+              >
+                <option value={2}>2 km Radius</option>
+                <option value={5}>5 km Radius</option>
+                <option value={10}>10 km Radius</option>
               </select>
             </div>
           </div>
@@ -793,6 +818,64 @@ const AreaAnalyticsInner = () => {
           ))}
         </div>
       </div>
+
+      {/* Live area traffic congestion chart */}
+      {areaAnalysis?.traffic_by_road && areaAnalysis.traffic_by_road.length > 0 && (
+        <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-4">
+          <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+            <FaChartLine className="text-sky-400" /> LIVE CONGESTION BY ROAD
+          </h2>
+          <div className="h-64 w-full">
+            <Bar
+              data={{
+                labels: areaAnalysis.traffic_by_road.map(r => r.road_name),
+                datasets: [
+                  {
+                    label: 'Congestion Percentage (%)',
+                    data: areaAnalysis.traffic_by_road.map(r => r.congestion_pct),
+                    backgroundColor: areaAnalysis.traffic_by_road.map(r => 
+                      r.congestion_pct >= 75 ? 'rgba(244, 63, 94, 0.7)' :
+                      r.congestion_pct >= 50 ? 'rgba(249, 115, 22, 0.7)' :
+                      r.congestion_pct >= 25 ? 'rgba(245, 158, 11, 0.7)' :
+                      'rgba(34, 197, 94, 0.7)'
+                    ),
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                    borderWidth: 1,
+                    borderRadius: 8,
+                  }
+                ]
+              }}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    backgroundColor: '#0f172a',
+                    titleColor: '#38bdf8',
+                    bodyColor: '#f8fafc',
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    borderWidth: 1,
+                    cornerRadius: 12
+                  }
+                },
+                scales: {
+                  x: {
+                    ticks: { color: '#cbd5e1' },
+                    grid: { display: false }
+                  },
+                  y: {
+                    ticks: { color: '#cbd5e1' },
+                    grid: { color: 'rgba(255,255,255,0.08)' },
+                    min: 0,
+                    max: 100
+                  }
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════
           6. 📹 CAMERA COVERAGE

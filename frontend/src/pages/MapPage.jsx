@@ -5,7 +5,7 @@ import {
   FaSearch, FaSpinner, FaLocationArrow, FaCamera, FaCar, FaTachometerAlt, FaExclamationTriangle,
   FaArrowRight
 } from 'react-icons/fa';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
@@ -90,6 +90,8 @@ const MapPage = () => {
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLevel, setFilterLevel] = useState('All');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // Active Area Analysis details
   const [selectedAreaAnalytics, setSelectedAreaAnalytics] = useState(null);
@@ -138,13 +140,17 @@ const MapPage = () => {
       setMapCenter([lat, lng]);
       setMapZoom(13);
       try {
-        const [geoRes, camsRes] = await Promise.all([
+        const [geoRes, camsRes, trafficRes] = await Promise.all([
           liveTrafficAPI.reverseGeocode(lat, lng),
           liveTrafficAPI.getCameras(lat, lng),
+          liveTrafficAPI.getLocationTraffic(lat, lng, 15, 1.5)
         ]);
         const addr = geoRes?.data || {};
         const cams = Array.isArray(camsRes?.data) ? camsRes.data : [];
         setCameras(cams);
+        if (trafficRes?.data) {
+          setSelectedAreaAnalytics(trafficRes.data);
+        }
         const country = Object.keys(locationTree)[0] || 'India';
         const matchedState = Object.keys(locationTree[country] || {}).find(
           s => s.toLowerCase() === String(addr.state || '').toLowerCase()
@@ -162,7 +168,6 @@ const MapPage = () => {
             const matchedArea = areas.find(a => a.toLowerCase() === String(addr.area || '').toLowerCase());
             if (matchedArea) {
               setSelectedArea(matchedArea);
-              await loadAreaTraffic(matchedArea, matchedCity, matchedState);
             }
           }
         }
@@ -267,24 +272,44 @@ const MapPage = () => {
     }
   };
 
-  // Search Area input filter
-  const handleSearch = (e) => {
+  // Search Area Nominatim API Handler
+  const handleSearchChange = async (e) => {
     const query = e.target.value;
     setSearchQuery(query);
-    if (query.trim().length >= 3) {
-      const match = cameras.find(c =>
-        (c.area || '').toLowerCase().includes(query.toLowerCase()) ||
-        (c.city || '').toLowerCase().includes(query.toLowerCase()) ||
-        (c.road_name || '').toLowerCase().includes(query.toLowerCase())
+    if (query.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
       );
-      if (match) {
-        setMapCenter([match.latitude, match.longitude]);
-        setMapZoom(13);
-        if (match.area) {
-          setSelectedArea(match.area);
-          loadAreaTraffic(match.area, match.city, match.state);
-        }
+      const data = await res.json();
+      setSearchResults(data || []);
+    } catch (err) {
+      console.warn('OSM Search failed:', err);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSelectSearchResult = async (result) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setMapCenter([lat, lng]);
+    setMapZoom(13);
+    setSearchResults([]);
+    setSearchQuery(result.display_name.split(',')[0]);
+
+    try {
+      const res = await liveTrafficAPI.getLocationTraffic(lat, lng, 1000, 1.5);
+      if (res?.data) {
+        setSelectedAreaAnalytics(res.data);
       }
+    } catch (e) {
+      console.warn('Failed to load traffic for searched location:', e);
     }
   };
 
@@ -353,10 +378,24 @@ const MapPage = () => {
             <input
               type="text"
               value={searchQuery}
-              onChange={handleSearch}
+              onChange={handleSearchChange}
               placeholder="🔍 Search Area, City, Road..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-sky-500"
             />
+            {searchLoading && <FaSpinner className="absolute right-3.5 top-3 text-sky-400 animate-spin" />}
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-800 rounded-xl max-h-60 overflow-y-auto z-[999] shadow-2xl p-2 space-y-1">
+                {searchResults.map((result) => (
+                  <button
+                    key={`${result.place_id}-${result.lat}-${result.lon}`}
+                    onClick={() => handleSelectSearchResult(result)}
+                    className="w-full text-left p-2.5 rounded-lg hover:bg-slate-800 text-[11px] font-semibold text-white transition-colors"
+                  >
+                    {result.display_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -504,6 +543,33 @@ const MapPage = () => {
             )}
 
             <MapController center={mapCenter} zoom={mapZoom} />
+
+            {/* Live traffic road segments */}
+            {Array.isArray(selectedAreaAnalytics?.traffic_segments) && selectedAreaAnalytics.traffic_segments.map((seg, idx) => {
+              const points = Array.isArray(seg?.points) ? seg.points : [];
+              if (points.length < 2) return null;
+              const level = (seg.traffic_level || '').toUpperCase();
+              const color = level === 'VERY HIGH' || level === 'BLOCKED' ? '#ef4444'
+                : level === 'HIGH' ? '#f97316'
+                  : level === 'MODERATE' ? '#f59e0b'
+                    : '#22c55e';
+              return (
+                <Polyline
+                  key={`map-live-segment-${idx}`}
+                  positions={points}
+                  pathOptions={{ color, weight: 6, opacity: 0.9 }}
+                >
+                  <Popup>
+                    <div style={{ minWidth: 170, color: '#0f172a' }}>
+                      <b>Live Traffic Segment</b>
+                      <div style={{ fontSize: 11, marginTop: 4 }}>Traffic: {seg.traffic_level || 'UNKNOWN'}</div>
+                      <div style={{ fontSize: 11 }}>Congestion: {seg.congestion_pct ?? 0}%</div>
+                      <div style={{ fontSize: 11 }}>Speed: {seg.current_speed_kmh ?? 0} km/h</div>
+                    </div>
+                  </Popup>
+                </Polyline>
+              );
+            })}
 
             {/* Camera Markers */}
             {filteredCameras.map((cam) => {

@@ -157,6 +157,7 @@ const LiveTrafficInner = () => {
     loadCameras();
     fetchPredictions();
     fetchHistorical();
+    handleDetectMyArea();
   }, []);
 
   /* ── Auto-refresh while LIVE for Area Analysis ──────────────────────────── */
@@ -402,9 +403,7 @@ const LiveTrafficInner = () => {
   };
 
   const handleStartLiveTraffic = async () => {
-    // The primary live source is the user's real device camera.
-    // Never silently switch to a hardcoded/demo CCTV feed.
-    await handleStartDeviceCamera();
+    handleDetectMyArea();
   };
 
   /* ── Mobile & Desktop Device Camera Handler ───────────────────────────── */
@@ -744,34 +743,34 @@ const LiveTrafficInner = () => {
         {areaAnalysis ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Est. Vehicles</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Current Area</span>
+              <p className="text-lg font-black text-white truncate">{areaAnalysis.area_name || 'Unknown'}</p>
+              <span className="text-[9px] text-slate-500 block">{areaAnalysis.city || 'Local City'}</span>
+            </div>
+            <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Est. Traffic Volume</span>
               <p className="text-2xl font-black text-white">{areaAnalysis.estimated_vehicles_in_area?.toLocaleString() || 0}</p>
-              <span className="text-[9px] text-slate-500 block">Area-wide estimate</span>
+              <span className="text-[9px] text-slate-500 block">Vehicles / hour</span>
             </div>
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Density</span>
-              <p className="text-2xl font-black text-cyan-400">{areaAnalysis.traffic_density_pct || 0}%</p>
-              <span className="text-[9px] text-slate-500 block">Road capacity ratio</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Traffic Level</span>
+              <p className="text-lg font-black text-cyan-400">{areaAnalysis.overall_traffic_level || 'LOW'}</p>
+              <span className="text-[9px] text-slate-500 block">Traffic rating</span>
             </div>
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Congestion</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Congestion Percentage</span>
               <p className="text-2xl font-black text-amber-400">{areaAnalysis.congestion_pct || 0}%</p>
-              <span className="text-[9px] text-slate-500 block">Current delay index</span>
+              <span className="text-[9px] text-slate-500 block">Congestion level</span>
             </div>
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Avg Speed</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Avg Road Speed</span>
               <p className="text-2xl font-black text-emerald-400">{areaAnalysis.average_speed_kmh || 0} <span className="text-xs font-bold">km/h</span></p>
-              <span className="text-[9px] text-slate-500 block">Area flow speed</span>
+              <span className="text-[9px] text-slate-500 block">Average flow speed</span>
             </div>
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Waiting Time</span>
-              <p className="text-2xl font-black text-orange-400">{areaAnalysis.estimated_waiting_time_mins || 0} <span className="text-xs font-bold">mins</span></p>
-              <span className="text-[9px] text-slate-500 block">Estimated delay</span>
-            </div>
-            <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80 space-y-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Active Cameras</span>
-              <p className="text-2xl font-black text-sky-400">{activeCamsCount}</p>
-              <span className="text-[9px] text-slate-500 block">{offlineCamsCount} offline</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase block">Delay Level</span>
+              <p className="text-lg font-black text-orange-400">{areaAnalysis.delay_level || 'Low'}</p>
+              <span className="text-[9px] text-slate-500 block">{areaAnalysis.estimated_waiting_time_mins || 0} min delay</span>
             </div>
           </div>
         ) : (

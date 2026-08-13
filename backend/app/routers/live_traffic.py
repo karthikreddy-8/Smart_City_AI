@@ -88,6 +88,7 @@ def get_area_query_endpoint(
     city: Optional[str] = Query(None, description="Selected City name"),
     state: Optional[str] = Query(None, description="Selected State name"),
     country: Optional[str] = Query(None, description="Selected Country name"),
+    radius_km: float = Query(1.5, description="Area radius to sample, in km"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -120,7 +121,7 @@ def get_area_query_endpoint(
             }
         lat, lng = location["latitude"], location["longitude"]
 
-    result = analyze_location(lat, lng, radius_km=1.5, location=location)
+    result = analyze_location(lat, lng, radius_km=radius_km, location=location)
     result["selected_area"] = area
     result["selected_city"] = city
     result["selected_state"] = state
@@ -158,6 +159,7 @@ def get_area_traffic_analysis(
     latitude: float = Query(..., description="User GPS latitude"),
     longitude: float = Query(..., description="User GPS longitude"),
     accuracy_meters: float = Query(15.0, description="Location accuracy in meters"),
+    radius_km: float = Query(1.5, description="Area radius to sample, in km"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -171,7 +173,7 @@ def get_area_traffic_analysis(
 
     geo = reverse_geocode(latitude, longitude)
     geo["accuracy_meters"] = accuracy_meters
-    return analyze_location(latitude, longitude, radius_km=1.5, location=geo)
+    return analyze_location(latitude, longitude, radius_km=radius_km, location=geo)
 
 
 

@@ -4,16 +4,32 @@ import axios from 'axios';
 const AuthContext = createContext();
 
 // ── API Base URL ──────────────────────────────────────────────────────────────
-// Uses Vite proxy in development (relative path /api) or env variable in production
+// Strategy:
+//   • Local dev  → VITE_API_URL=/api  (Vite proxies /api → http://127.0.0.1:8000)
+//   • Production → VITE_API_URL=https://smart-city-ai-d4re.onrender.com/api
+//
+// IMPORTANT: never redirect /api away from the Vite proxy in dev — that breaks
+// the local backend connection and sends all auth requests to the Render server.
+const RENDER_BACKEND = 'https://smart-city-ai-d4re.onrender.com/api';
+
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
+
+  // In development mode, Vite's proxy handles /api → localhost:8000
   if (import.meta.env.DEV) {
-    if (envUrl && (envUrl.startsWith('/') || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+    // If env is a full URL (not relative), use it directly (e.g. already set to Render for testing)
+    if (envUrl && envUrl.startsWith('http')) {
       return envUrl;
     }
+    // Default: use Vite proxy
     return '/api';
   }
-  return envUrl || '/api';
+
+  // Production: use full Render URL from env, or fallback to hardcoded Render URL
+  if (envUrl && envUrl.startsWith('http')) {
+    return envUrl;
+  }
+  return RENDER_BACKEND;
 };
 
 export const API_URL = getApiUrl();

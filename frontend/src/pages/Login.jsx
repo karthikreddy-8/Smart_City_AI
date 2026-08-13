@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { API_URL } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
 import {
   FaCity, FaUser, FaLock, FaArrowRight, FaEye, FaEyeSlash,
-  FaBolt, FaShieldAlt, FaChartLine
+  FaBolt, FaShieldAlt, FaChartLine, FaRedo
 } from 'react-icons/fa';
 
 // ── Animated traffic road SVG ────────────────────────────────────────────────
@@ -55,12 +56,15 @@ const Login = () => {
       navigate(redirect, { replace: true });
     } catch (err) {
       const detail = err?.response?.data?.detail;
+      const status = err?.response?.status;
       if (detail) {
         setError(detail);
-      } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network')) {
-        setError('Cannot connect to server. Make sure the backend is running on port 8000.');
+      } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network') || err?.message?.includes('fetch')) {
+        setError(`NETWORK_ERROR: Cannot reach backend at ${API_URL}. Check that the backend server is running, then click Retry.`);
+      } else if (status) {
+        setError(`Server returned HTTP ${status}. Please check your credentials or try again.`);
       } else {
-        setError('Login failed. Please check your credentials and try again.');
+        setError(`Login failed: ${err?.message || 'Unknown error'}. Backend: ${API_URL}`);
       }
     } finally {
       setLoading(false);
@@ -79,12 +83,15 @@ const Login = () => {
       navigate(redirect, { replace: true });
     } catch (err) {
       const detail = err?.response?.data?.detail;
+      const status = err?.response?.status;
       if (detail) {
         setError(detail);
-      } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network')) {
-        setError('Cannot connect to server. Make sure the backend is running on port 8000.');
+      } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network') || err?.message?.includes('fetch')) {
+        setError(`NETWORK_ERROR: Cannot reach backend at ${API_URL}. Check that the backend server is running, then click Retry.`);
+      } else if (status) {
+        setError(`Server returned HTTP ${status}. Please check your credentials or try again.`);
       } else {
-        setError('Demo login failed. Ensure the backend (python run.py) is running.');
+        setError(`Login failed: ${err?.message || 'Unknown error'}. Backend: ${API_URL}`);
       }
     } finally {
       setLoading(false);
@@ -217,10 +224,31 @@ const Login = () => {
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-rose-500/10 border border-rose-500/25 text-rose-400 p-4 rounded-2xl text-sm font-medium mb-6 flex items-start space-x-2"
+              className="bg-rose-500/10 border border-rose-500/25 text-rose-400 p-4 rounded-2xl text-sm font-medium mb-6 space-y-2"
             >
-              <FaShieldAlt className="flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
+              <div className="flex items-start space-x-2">
+                <FaShieldAlt className="flex-shrink-0 mt-0.5" />
+                <span className="break-all">
+                  {error.startsWith('NETWORK_ERROR:')
+                    ? 'Traffic service temporarily unavailable. The backend did not respond.'
+                    : error
+                  }
+                </span>
+              </div>
+              {error.startsWith('NETWORK_ERROR:') && (
+                <div className="text-[11px] text-rose-300/70 font-mono bg-rose-950/30 rounded-lg px-3 py-2 break-all">
+                  Backend URL: {API_URL}
+                </div>
+              )}
+              {error.startsWith('NETWORK_ERROR:') && (
+                <button
+                  type="button"
+                  onClick={() => setError('')}
+                  className="flex items-center gap-1.5 text-[11px] text-rose-300 hover:text-white transition-colors font-bold"
+                >
+                  <FaRedo className="text-[9px]" /> Dismiss &amp; Retry
+                </button>
+              )}
             </motion.div>
           )}
 
