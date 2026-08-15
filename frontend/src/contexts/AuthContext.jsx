@@ -8,36 +8,25 @@ const AuthContext = createContext();
 //   • Local dev  → VITE_API_URL=/api  (Vite proxies /api → http://127.0.0.1:8000)
 //   • Production → VITE_API_URL=https://smart-city-ai-d4re.onrender.com/api
 //
-// IMPORTANT: never redirect /api away from the Vite proxy in dev — that breaks
-// the local backend connection and sends all auth requests to the Render server.
+// Vite selects .env (dev) or .env.production (build) automatically.
 const RENDER_BACKEND = 'https://smart-city-ai-d4re.onrender.com/api';
 
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
-
-  // In development mode, Vite's proxy handles /api → localhost:8000
-  if (import.meta.env.DEV) {
-    // If env is a full URL (not relative), use it directly (e.g. already set to Render for testing)
-    if (envUrl && envUrl.startsWith('http')) {
-      return envUrl;
-    }
-    // Default: use Vite proxy
-    return '/api';
-  }
-
-  // Production: use full Render URL from env, or fallback to hardcoded Render URL
-  if (envUrl && envUrl.startsWith('http')) {
-    return envUrl;
-  }
+  if (envUrl && envUrl.trim()) return envUrl.trim();
+  // Final fallback: production Render URL
   return RENDER_BACKEND;
 };
 
 export const API_URL = getApiUrl();
 
-// ── Axios instance with auth header injection ────────────────────────────────
-export const api = axios.create({ baseURL: API_URL });
+// ── Axios instance ────────────────────────────────────────────────────────────
+export const api = axios.create({
+  baseURL: API_URL,
+  timeout: 35000,  // 35s — covers Render cold-start (~30s)
+});
 
-// Automatically attach Bearer token to every request if present
+// Attach Bearer token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -45,6 +34,84 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// ── Response interceptor: automatic retry on network errors & 503 ─────────────
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const config = error.config || {};
+    // Retry at most once, skip retrying login/register forms
+    const isRetryable = (
+      !config._retried &&
+      (
+        error.code === 'ERR_NETWORK' ||
+        error.code === 'ECONNABORTED' ||
+        (error.response && error.response.status === 503)
+      )
+    );
+
+    if (isRetryable) {
+      config._retried = true;
+      // Wait 2 seconds before retrying
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return api(config);
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+// ── Backend wake-up helper ─────────────────────────────────────────────────────
+// Pings the /health endpoint before login to detect if Render is sleeping.
+// Returns: 'online' | 'waking' | 'offline'
+export const checkBackendHealth = async () => {
+  const healthUrl = API_URL.replace(/\/api$/, '') + '/health';
+  try {
+    const res = await axios.get(healthUrl, { timeout: 5000 });
+    if (res.status === 200) return 'online';
+    return 'offline';
+  } catch (err) {
+    if (err.code === 'ECONNABORTED') return 'waking';  // timeout = sleeping
+    if (err.code === 'ERR_NETWORK') return 'waking';
+    if (err.response?.status >= 500) return 'waking';
+    return 'offline';
+  }
+};
+
+// ── Wake backend with patience ─────────────────────────────────────────────────
+// Sends a /wake ping and waits up to 40s for the backend to respond.
+export const wakeBackend = async (onProgress) => {
+  const wakeUrl = API_URL.replace(/\/api$/, '') + '/wake';
+  const maxWaitMs = 40000;
+  const startTime = Date.now();
+
+  // Try wake endpoint first, fall back to /health
+  const tryPing = async () => {
+    try {
+      const res = await axios.get(wakeUrl, { timeout: 38000 });
+      if (res.status === 200) return true;
+    } catch {
+      try {
+        const healthUrl = API_URL.replace(/\/api$/, '') + '/health';
+        const res2 = await axios.get(healthUrl, { timeout: 38000 });
+        if (res2.status === 200) return true;
+      } catch {
+        /* still waking */
+      }
+    }
+    return false;
+  };
+
+  // Poll until backend responds or timeout
+  while (Date.now() - startTime < maxWaitMs) {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    if (onProgress) onProgress(elapsed);
+    const isUp = await tryPing();
+    if (isUp) return true;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  return false;
+};
 
 export const AuthProvider = ({ children }) => {
   const [token, setToken]   = useState(() => localStorage.getItem('token') || null);

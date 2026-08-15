@@ -26,11 +26,20 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
 body {
+  overflow-x: hidden;
   transition: background-color 300ms ease, color 300ms ease;
   font-family: 'Outfit', 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Safe area insets for notched/punched phones */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ── Glassmorphism ───────────────────────────────────────────────────────────── */
@@ -228,5 +237,41 @@ body {
 .traffic-car-3 {
   animation: traffic-flow 6s linear infinite;
   animation-delay: 0.7s;
+}
+
+/* ── Responsive Table ────────────────────────────────────────────────────────── */
+/* Wrap any table in this class for horizontal scroll on mobile */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 0.5rem;
+}
+
+/* ── Touch Target Minimum Size ────────────────────────────────────────────── */
+/* Ensures all interactive elements meet WCAG 44px minimum tap target */
+button, a, [role="button"] {
+  min-height: 36px;
+}
+
+/* ── Card overflow guard ─────────────────────────────────────────────────── */
+/* Prevents absolutely positioned child elements from causing page overflow */
+.overflow-guard {
+  overflow: hidden;
+}
+
+/* ── Map container responsive ────────────────────────────────────────────── */
+.map-container {
+  width: 100%;
+  min-height: 300px;
+}
+
+@media (max-width: 640px) {
+  .map-container {
+    min-height: 250px;
+  }
+  /* Reduce chart padding on very small screens */
+  .chart-wrapper {
+    padding: 1rem;
+  }
 }
 

@@ -1,21 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
-import { FaBell, FaBars } from 'react-icons/fa';
+import { FaBell, FaBars, FaTimes } from 'react-icons/fa';
 
 const Navbar = ({ toggleSidebar }) => {
   const location = useLocation();
   const [alerts, setAlerts] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
   // Derive title from location pathname
   const getPageTitle = () => {
     switch (location.pathname) {
-      case '/dashboard': return 'Urban Control Center';
-      case '/map': return 'Live Congestion Map';
-      case '/predict': return 'AI Predictive Analysis';
-      case '/admin': return 'System Control Panel';
-      default: return 'SmartCity AI';
+      case '/dashboard':    return 'Urban Control Center';
+      case '/map':          return 'Live Congestion Map';
+      case '/predict':      return 'AI Predictive Analysis';
+      case '/admin':        return 'System Control Panel';
+      case '/live-traffic': return 'Live Traffic Monitor';
+      case '/area':         return 'Area Analytics';
+      default:              return 'SmartCity AI';
     }
   };
 
@@ -23,34 +26,52 @@ const Navbar = ({ toggleSidebar }) => {
   useEffect(() => {
     const defaultAlerts = [
       { id: 1, type: 'critical', text: 'Accident reported near Vikas Marg. Average speed dropped to 8 km/h.', time: '2 mins ago' },
-      { id: 2, type: 'warning', text: 'High congestion predicted on Ring Road between 6:00 PM - 8:00 PM.', time: '10 mins ago' },
-      { id: 3, type: 'info', text: 'Road closure planned on Lodi Road for maintenance tomorrow.', time: '1 hr ago' }
+      { id: 2, type: 'warning',  text: 'High congestion predicted on Ring Road between 6:00 PM – 8:00 PM.', time: '10 mins ago' },
+      { id: 3, type: 'info',     text: 'Road closure planned on Lodi Road for maintenance tomorrow.', time: '1 hr ago' },
     ];
     setAlerts(defaultAlerts);
   }, []);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showDropdown]);
+
+  // Close dropdown on route change
+  useEffect(() => {
+    setShowDropdown(false);
+  }, [location.pathname]);
+
   return (
-    <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-10 sticky top-0">
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={toggleSidebar} 
-          className="md:hidden text-slate-300 p-2 hover:bg-slate-800 rounded-xl transition-colors"
+    <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-10 sticky top-0 shrink-0">
+      <div className="flex items-center gap-4 min-w-0">
+        <button
+          onClick={toggleSidebar}
+          className="md:hidden text-slate-300 p-2 hover:bg-slate-800 rounded-xl transition-colors shrink-0"
+          aria-label="Open menu"
         >
           <FaBars size={20} />
         </button>
-        <h2 className="text-lg md:text-xl font-bold text-white transition-colors truncate max-w-[200px] md:max-w-none">
+        <h2 className="text-lg md:text-xl font-bold text-white transition-colors truncate">
           {getPageTitle()}
         </h2>
       </div>
 
-      <div className="flex items-center space-x-6">
+      <div className="flex items-center space-x-3 md:space-x-6 shrink-0">
         <ThemeToggle />
 
         {/* Notifications Icon & Popover */}
-        <div className="relative">
-          <button 
+        <div className="relative" ref={dropdownRef}>
+          <button
             onClick={() => setShowDropdown(!showDropdown)}
             className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700/80 transition-all relative"
+            aria-label="Notifications"
           >
             <FaBell className="text-lg" />
             {alerts.length > 0 && (
@@ -61,29 +82,29 @@ const Navbar = ({ toggleSidebar }) => {
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 mt-3 w-80 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 shadow-2xl p-4 z-50 text-slate-800 dark:text-white">
+            <div className="absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-80 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 shadow-2xl p-4 z-50 text-slate-800 dark:text-white">
               <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-100 dark:border-slate-700">
                 <h3 className="font-semibold text-sm">System Notifications</h3>
-                <button 
-                  onClick={() => setAlerts([])}
+                <button
+                  onClick={() => { setAlerts([]); setShowDropdown(false); }}
                   className="text-xs text-primary-500 hover:text-primary-600 font-medium"
                 >
                   Clear All
                 </button>
               </div>
-              
+
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {alerts.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-4">No active traffic notifications.</p>
                 ) : (
                   alerts.map((alert) => (
-                    <div 
-                      key={alert.id} 
+                    <div
+                      key={alert.id}
                       className={`p-2.5 rounded-xl border text-xs flex flex-col space-y-1 ${
-                        alert.type === 'critical' 
-                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400' 
-                          : alert.type === 'warning' 
-                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400' 
+                        alert.type === 'critical'
+                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                          : alert.type === 'warning'
+                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
                           : 'bg-primary-500/10 border-primary-500/20 text-primary-600 dark:text-primary-400'
                       }`}
                     >

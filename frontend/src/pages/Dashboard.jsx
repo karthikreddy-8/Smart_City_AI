@@ -166,7 +166,7 @@ const Dashboard = () => {
           }
         });
       } catch (err) {
-        console.error("Failed to load dashboard data", err);
+        console.error('Failed to load dashboard data', err);
       } finally {
         setLoading(false);
       }
@@ -307,38 +307,48 @@ const Dashboard = () => {
 
           {/* Charts Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-            <div className="glass rounded-3xl p-6 h-96">
+            <div className="glass rounded-3xl p-6 h-96 overflow-x-auto chart-wrapper">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> 24-Hour Traffic Volume
               </h3>
-              {chartsData?.hourly && <Line options={chartOptions} data={chartsData.hourly} />}
+              <div className="h-72 min-w-0">
+                {chartsData?.hourly && <Line options={chartOptions} data={chartsData.hourly} />}
+              </div>
             </div>
 
-            <div className="glass rounded-3xl p-6 h-96">
+            <div className="glass rounded-3xl p-6 h-96 overflow-x-auto chart-wrapper">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Average Speed by Road Type
               </h3>
-              {chartsData?.roadCongestion && <Bar options={chartOptions} data={chartsData.roadCongestion} />}
+              <div className="h-72 min-w-0">
+                {chartsData?.roadCongestion && <Bar options={chartOptions} data={chartsData.roadCongestion} />}
+              </div>
             </div>
 
-            <div className="glass rounded-3xl p-6 h-96">
+            <div className="glass rounded-3xl p-6 h-96 overflow-x-auto chart-wrapper">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-violet-400"></span> Speed vs Density Distribution
               </h3>
-              {chartsData?.scatterPlot && <Scatter options={chartOptions} data={chartsData.scatterPlot} />}
+              <div className="h-72 min-w-0">
+                {chartsData?.scatterPlot && <Scatter options={chartOptions} data={chartsData.scatterPlot} />}
+              </div>
             </div>
 
-            <div className="glass rounded-3xl p-6 h-96">
+            <div className="glass rounded-3xl p-6 h-96 overflow-x-auto chart-wrapper">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-400"></span> Congestion Distribution
               </h3>
-              {chartsData?.congestionPie && <Doughnut options={doughnutOptions} data={chartsData.congestionPie} />}
+              <div className="h-72 min-w-0">
+                {chartsData?.congestionPie && <Doughnut options={doughnutOptions} data={chartsData.congestionPie} />}
+              </div>
             </div>
           </div>
         </>
       ) : (
         <div className="glass rounded-3xl p-12 text-center text-slate-300">
-          <p>Failed to load dashboard data.</p>
+          <div className="text-4xl mb-4 opacity-50">📊</div>
+          <p className="font-semibold text-slate-200 mb-2">Unable to load dashboard data</p>
+          <p className="text-sm text-slate-500">The analytics service is temporarily unavailable. Data will reload automatically.</p>
         </div>
       )}
     </div>

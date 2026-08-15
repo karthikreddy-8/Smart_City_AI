@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://smartcity-ai.onrender.com/api/:path*"
+      "destination": "https://smart-city-ai-d4re.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",

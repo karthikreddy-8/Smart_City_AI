@@ -153,7 +153,6 @@ def detailed_health_check():
     except Exception as e:
         db_status = f"DISCONNECTED ({e})"
 
-
     try:
         from app.ml.yolo_detector import yolo_detector
         yolo_status = "READY" if yolo_detector.using_yolo else "FALLBACK CONTOUR (PyTorch active)"
@@ -168,4 +167,15 @@ def detailed_health_check():
         "Camera": "AVAILABLE",
         "TrafficProvider": "TOMTOM_CONFIGURED" if tomtom_configured else "TOMTOM_API_KEY_MISSING",
     }
+
+
+@app.get("/wake")
+@app.get("/api/wake")
+def wake_backend():
+    """
+    Lightweight wake-up endpoint for frontend cold-start detection.
+    No auth, no DB required. Returns instantly once the server is alive.
+    The frontend pings this before login to detect Render sleeping.
+    """
+    return {"status": "awake", "message": "SmartCity AI backend is online and ready."}
 

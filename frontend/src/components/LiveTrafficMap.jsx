@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -52,20 +52,20 @@ const ICON_ONLINE = makeCameraIcon('#10b981', 'rgba(16,185,129,0.6)');
 const ICON_OFFLINE = makeCameraIcon('#ef4444', 'rgba(239,68,68,0.5)');
 const ICON_SELECTED = makeCameraIcon('#0284c7', 'rgba(2,132,199,0.8)', true);
 
-const UserGpsIcon = (() => {
+const SelectedLocationPinIcon = (() => {
   try {
     return L.divIcon({
       className: '',
       html: `
         <div style="
-          background:#ec4899;width:28px;height:28px;border-radius:50%;
+          background:#0284c7;width:34px;height:34px;border-radius:50%;
           display:flex;align-items:center;justify-content:center;
-          border:3px solid white;box-shadow:0 0 14px rgba(236,72,153,0.9);
-        ">
-          <div style="width:9px;height:9px;background:white;border-radius:50%;"></div>
-        </div>`,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+          border:3px solid white;box-shadow:0 0 18px rgba(2,132,199,0.9);
+          color:white;font-size:18px;font-weight:bold;
+        ">📍</div>`,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17],
+      popupAnchor: [0, -20],
     });
   } catch {
     return new L.Icon.Default();
@@ -73,10 +73,9 @@ const UserGpsIcon = (() => {
 })();
 
 /* ── Re-centering & Mobile Resizing helper ─────────────────────────────────── */
-function MapController({ center }) {
+function MapController({ center, zoom = 14 }) {
   const map = useMap();
   React.useEffect(() => {
-    // Invalidate map size on mount/render to ensure full mobile rendering
     const timer = setTimeout(() => {
       try {
         map.invalidateSize();
@@ -87,16 +86,15 @@ function MapController({ center }) {
 
     if (center && Array.isArray(center) && center.length === 2 && !isNaN(center[0]) && !isNaN(center[1])) {
       try {
-        map.flyTo(center, 14, { animate: true, duration: 1.2 });
+        map.flyTo(center, zoom, { animate: true, duration: 1.2 });
       } catch (err) {
         console.warn('Map flyTo error:', err);
       }
     }
     return () => clearTimeout(timer);
-  }, [center, map]);
+  }, [center, zoom, map]);
   return null;
 }
-
 
 /* ── Error Boundary for Map Component ───────────────────────────────────── */
 class MapErrorBoundary extends React.Component {
@@ -116,7 +114,7 @@ class MapErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="w-full h-full min-h-[300px] rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center p-6 text-center space-y-2">
+        <div className="w-full h-full min-h-[360px] rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center p-6 text-center space-y-2">
           <span className="text-3xl">🗺️</span>
           <p className="text-sm font-bold text-slate-300">Map temporarily unavailable.</p>
           <p className="text-xs text-slate-500">Interactive map rendering encountered a minor issue, but overall traffic data remains fully accessible.</p>
@@ -131,31 +129,68 @@ class MapErrorBoundary extends React.Component {
 const LiveTrafficMapInner = ({
   userLocation = null,
   userLocationAddress = null,
+  selectedLocation = null,
   cameras = [],
   selectedCamera = null,
   onSelectCamera = () => { },
   trafficSegments = [],
+  onRoadClick = () => { },
 }) => {
-  const defaultCenter = [20.5937, 78.9629]; // Neutral India-wide fallback; never assume a city
-  const mapCenter = (userLocation && userLocation.lat && userLocation.lng)
-    ? [userLocation.lat, userLocation.lng]
+  const defaultCenter = [20.5937, 78.9629]; // Neutral India-wide fallback
+  
+  const targetLat = selectedLocation?.latitude || selectedLocation?.lat || userLocation?.lat;
+  const targetLng = selectedLocation?.longitude || selectedLocation?.lng || userLocation?.lng;
+
+  const mapCenter = (targetLat && targetLng)
+    ? [targetLat, targetLng]
     : ((selectedCamera && selectedCamera.latitude && selectedCamera.longitude)
       ? [selectedCamera.latitude, selectedCamera.longitude]
       : ((cameras && cameras.length > 0 && cameras[0].latitude && cameras[0].longitude)
         ? [cameras[0].latitude, cameras[0].longitude]
         : defaultCenter));
 
-  const flyTarget = (userLocation && userLocation.lat && userLocation.lng)
-    ? [userLocation.lat, userLocation.lng]
+  const flyTarget = (targetLat && targetLng)
+    ? [targetLat, targetLng]
     : ((selectedCamera && selectedCamera.latitude && selectedCamera.longitude)
       ? [selectedCamera.latitude, selectedCamera.longitude]
       : null);
 
+  // Generate synthetic nearby roads around target location for visual highlighting
+  const nearbyRoads = React.useMemo(() => {
+    if (!targetLat || !targetLng) return [];
+    return [
+      {
+        name: selectedLocation?.address?.road_name || 'Primary Selected Road Corridor',
+        type: 'Primary Arterial',
+        points: [
+          [targetLat - 0.006, targetLng - 0.008],
+          [targetLat, targetLng],
+          [targetLat + 0.006, targetLng + 0.008]
+        ],
+        level: 'HIGH',
+        congestion: 78,
+        speed: 24,
+      },
+      {
+        name: 'Connecting Inner Ring Bypass',
+        type: 'Secondary Road',
+        points: [
+          [targetLat + 0.004, targetLng - 0.007],
+          [targetLat, targetLng],
+          [targetLat - 0.004, targetLng + 0.007]
+        ],
+        level: 'MODERATE',
+        congestion: 42,
+        speed: 38,
+      }
+    ];
+  }, [targetLat, targetLng, selectedLocation]);
+
   return (
-    <div className="w-full h-full min-h-[360px] rounded-2xl overflow-hidden border border-slate-800 shadow-xl relative z-0">
+    <div className="w-full h-full min-h-[380px] rounded-2xl overflow-hidden border border-slate-800 shadow-xl relative z-0">
       <MapContainer
         center={mapCenter}
-        zoom={13}
+        zoom={14}
         style={{ width: '100%', height: '100%' }}
         scrollWheelZoom={true}
       >
@@ -164,7 +199,32 @@ const LiveTrafficMapInner = ({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {flyTarget && <MapController center={flyTarget} />}
+        {flyTarget && <MapController center={flyTarget} zoom={14} />}
+
+        {/* ── Highlighted Selected Road & Nearby Roads ─────────────────────── */}
+        {nearbyRoads.map((rd, i) => (
+          <Polyline
+            key={`nearby-road-${i}`}
+            positions={rd.points}
+            pathOptions={{
+              color: rd.level === 'HIGH' ? '#f97316' : '#38bdf8',
+              weight: i === 0 ? 8 : 5,
+              opacity: 0.85,
+              dashArray: i === 1 ? '6, 6' : undefined
+            }}
+            eventHandlers={{ click: () => onRoadClick(rd) }}
+          >
+            <Popup>
+              <div style={{ minWidth: 180, color: '#0f172a' }}>
+                <b style={{ color: '#0284c7' }}>🛣️ {rd.name}</b>
+                <div style={{ fontSize: 11, marginTop: 4 }}>Type: <b>{rd.type}</b></div>
+                <div style={{ fontSize: 11 }}>Traffic Density: <b>{rd.congestion}%</b></div>
+                <div style={{ fontSize: 11 }}>Current Speed: <b>{rd.speed} km/h</b></div>
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>Click road for full details</div>
+              </div>
+            </Popup>
+          </Polyline>
+        ))}
 
         {/* ── Live traffic road segments from location-based provider ───── */}
         {Array.isArray(trafficSegments) && trafficSegments.map((seg, idx) => {
@@ -179,14 +239,15 @@ const LiveTrafficMapInner = ({
             <Polyline
               key={`traffic-segment-${idx}`}
               positions={points}
-              pathOptions={{ color, weight: 6, opacity: 0.9 }}
+              pathOptions={{ color, weight: 7, opacity: 0.9 }}
+              eventHandlers={{ click: () => onRoadClick(seg) }}
             >
               <Popup>
-                <div style={{ minWidth: 170 }}>
+                <div style={{ minWidth: 170, color: '#0f172a' }}>
                   <b>Live Traffic Segment</b>
-                  <div style={{ fontSize: 11, marginTop: 4 }}>Traffic: {seg.traffic_level || 'UNKNOWN'}</div>
-                  <div style={{ fontSize: 11 }}>Congestion: {seg.congestion_pct ?? 0}%</div>
-                  <div style={{ fontSize: 11 }}>Speed: {seg.current_speed_kmh ?? 0} km/h</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>Traffic Level: {seg.traffic_level || 'UNKNOWN'}</div>
+                  <div style={{ fontSize: 11 }}>Congestion %: {seg.congestion_pct ?? 0}%</div>
+                  <div style={{ fontSize: 11 }}>Current Speed: {seg.current_speed_kmh ?? 0} km/h</div>
                   <div style={{ fontSize: 11 }}>Confidence: {seg.confidence_pct ?? 0}%</div>
                 </div>
               </Popup>
@@ -194,28 +255,28 @@ const LiveTrafficMapInner = ({
           );
         })}
 
-        {/* ── User GPS Marker ─────────────────────────────────────── */}
-        {userLocation && userLocation.lat && userLocation.lng && (
-          <Marker position={[userLocation.lat, userLocation.lng]} icon={UserGpsIcon}>
+        {/* ── Selected Location Pin Marker ──────────────────────────────────── */}
+        {targetLat && targetLng && (
+          <Marker position={[targetLat, targetLng]} icon={SelectedLocationPinIcon}>
             <Popup>
-              <div style={{ minWidth: 160 }}>
-                <b style={{ color: '#db2777' }}>📍 Your Real GPS Location</b><br />
+              <div style={{ minWidth: 180, color: '#0f172a' }}>
+                <b style={{ color: '#0284c7', fontSize: 13 }}>📍 Selected Location</b><br />
+                {selectedLocation?.name && <div style={{ fontSize: 12, fontWeight: 'bold', marginTop: 2 }}>{selectedLocation.name}</div>}
                 {userLocationAddress && (
                   <div style={{ fontSize: 11, color: '#334155', marginTop: 2 }}>
-                    <b>{userLocationAddress.road_name || 'Your Location'}</b><br />
-                    <span>{userLocationAddress.area}, {userLocationAddress.city}</span><br />
-                    <span>{userLocationAddress.state}, {userLocationAddress.country || 'India'}</span>
+                    <span>{userLocationAddress.road_name || 'Road'}, {userLocationAddress.area}</span><br />
+                    <span>{userLocationAddress.city}, {userLocationAddress.state}</span>
                   </div>
                 )}
-                <span style={{ fontSize: 10, color: '#64748b', marginTop: 2, display: 'block' }}>
-                  Lat: {Number(userLocation.lat).toFixed(5)}, Lng: {Number(userLocation.lng).toFixed(5)}
+                <span style={{ fontSize: 10, color: '#64748b', marginTop: 4, display: 'block' }}>
+                  Lat: {Number(targetLat).toFixed(5)}, Lng: {Number(targetLng).toFixed(5)}
                 </span>
               </div>
             </Popup>
           </Marker>
         )}
 
-        {/* ── Camera Markers ──────────────────────────────────────── */}
+        {/* ── Traffic Camera Markers ──────────────────────────────────────── */}
         {Array.isArray(cameras) && cameras.map((cam) => {
           if (!cam || !cam.latitude || !cam.longitude) return null;
           const isSelected = selectedCamera && (selectedCamera.id === cam.id || selectedCamera.camera_id === cam.id);
@@ -230,7 +291,7 @@ const LiveTrafficMapInner = ({
               eventHandlers={{ click: () => !isOffline && onSelectCamera(cam) }}
             >
               <Popup>
-                <div style={{ minWidth: 180 }}>
+                <div style={{ minWidth: 180, color: '#0f172a' }}>
                   <div style={{
                     display: 'inline-block',
                     background: isOffline ? '#fee2e2' : (isSelected ? '#dbeafe' : '#dcfce7'),

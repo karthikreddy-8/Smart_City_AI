@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { API_URL } from '../contexts/AuthContext';
+import { checkBackendHealth, wakeBackend } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
 import {
   FaCity, FaUser, FaLock, FaArrowRight, FaEye, FaEyeSlash,
-  FaBolt, FaShieldAlt, FaChartLine, FaRedo
+  FaBolt, FaShieldAlt, FaChartLine, FaRedo, FaSpinner, FaServer
 } from 'react-icons/fa';
 
 // ── Animated traffic road SVG ────────────────────────────────────────────────
@@ -31,15 +31,69 @@ const ROLE_REDIRECT = {
   'Guest': '/dashboard',
 };
 
+// ── Friendly error messages ───────────────────────────────────────────────────
+const friendlyError = (err) => {
+  const detail = err?.response?.data?.detail;
+  const status = err?.response?.status;
+  const code = err?.code;
+
+  if (detail) return detail;
+  if (code === 'ERR_NETWORK' || code === 'ERR_CANCELED')
+    return 'Unable to reach the server. Please check your internet connection and try again.';
+  if (code === 'ECONNABORTED')
+    return 'The server is taking too long to respond. It may be starting up — please wait a moment and retry.';
+  if (status === 401) return 'Invalid email or password. Please check your credentials.';
+  if (status === 403) return 'Your account has been deactivated. Please contact an administrator.';
+  if (status === 404) return 'Login service not found. Please refresh the page and try again.';
+  if (status === 503) return 'The server is temporarily unavailable. It may be starting up — please retry in a moment.';
+  if (status >= 500) return 'The server encountered an error. Please try again in a few seconds.';
+  return 'Login failed. Please check your credentials and try again.';
+};
+
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [wakingUp, setWakingUp] = useState(false);
+  const [wakeSeconds, setWakeSeconds] = useState(0);
 
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // ── Core login flow with health check ──────────────────────────────────────
+  const doLogin = async (identifier, password) => {
+    setError('');
+    setLoading(true);
+    setWakingUp(false);
+
+    try {
+      // Quick health check — non-blocking, 5s timeout
+      const health = await checkBackendHealth();
+      if (health === 'waking') {
+        // Backend is sleeping — wake it up with a patience wait
+        setWakingUp(true);
+        setLoading(false);
+        const isUp = await wakeBackend((sec) => setWakeSeconds(sec));
+        setWakingUp(false);
+        setLoading(true);
+        if (!isUp) {
+          setError('The backend server could not be reached after 40 seconds. Please try again in a minute.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const userRole = await login(identifier, password);
+      navigate(ROLE_REDIRECT[userRole] || '/dashboard', { replace: true });
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setLoading(false);
+      setWakingUp(false);
+    }
+  };
 
   // ── Submit handler ──────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
@@ -48,55 +102,17 @@ const Login = () => {
       setError('Please enter your username/email and password.');
       return;
     }
-    setError('');
-    setLoading(true);
-    try {
-      const userRole = await login(username.trim(), password);
-      const redirect = ROLE_REDIRECT[userRole] || '/dashboard';
-      navigate(redirect, { replace: true });
-    } catch (err) {
-      const detail = err?.response?.data?.detail;
-      const status = err?.response?.status;
-      if (detail) {
-        setError(detail);
-      } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network') || err?.message?.includes('fetch')) {
-        setError(`NETWORK_ERROR: Cannot reach backend at ${API_URL}. Check that the backend server is running, then click Retry.`);
-      } else if (status) {
-        setError(`Server returned HTTP ${status}. Please check your credentials or try again.`);
-      } else {
-        setError(`Login failed: ${err?.message || 'Unknown error'}. Backend: ${API_URL}`);
-      }
-    } finally {
-      setLoading(false);
-    }
+    await doLogin(username.trim(), password);
   };
 
   // ── One-click demo login ────────────────────────────────────────────────────
   const handleDemoLogin = async (account) => {
     setUsername(account.username);
     setPassword(account.password);
-    setError('');
-    setLoading(true);
-    try {
-      const userRole = await login(account.username, account.password);
-      const redirect = ROLE_REDIRECT[userRole] || '/dashboard';
-      navigate(redirect, { replace: true });
-    } catch (err) {
-      const detail = err?.response?.data?.detail;
-      const status = err?.response?.status;
-      if (detail) {
-        setError(detail);
-      } else if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network') || err?.message?.includes('fetch')) {
-        setError(`NETWORK_ERROR: Cannot reach backend at ${API_URL}. Check that the backend server is running, then click Retry.`);
-      } else if (status) {
-        setError(`Server returned HTTP ${status}. Please check your credentials or try again.`);
-      } else {
-        setError(`Login failed: ${err?.message || 'Unknown error'}. Backend: ${API_URL}`);
-      }
-    } finally {
-      setLoading(false);
-    }
+    await doLogin(account.username, account.password);
   };
+
+  const isDisabled = loading || wakingUp;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex overflow-hidden relative">
@@ -219,6 +235,28 @@ const Login = () => {
             <p className="text-slate-400 mt-2">Sign in to your analytics dashboard</p>
           </div>
 
+          {/* Backend waking up indicator */}
+          {wakingUp && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-4 rounded-2xl text-sm font-medium mb-6"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <FaServer className="text-amber-400 text-base shrink-0" />
+                <span className="font-bold">Backend is starting up…</span>
+              </div>
+              <p className="text-xs text-amber-300/80 leading-relaxed">
+                The server was sleeping and is now waking up. This takes about 30–60 seconds on first access.
+                Please wait — you will be logged in automatically.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <FaSpinner className="animate-spin text-amber-400 text-xs" />
+                <span className="text-xs text-amber-400 font-mono">{wakeSeconds}s elapsed…</span>
+              </div>
+            </motion.div>
+          )}
+
           {/* Error message */}
           {error && (
             <motion.div
@@ -228,27 +266,15 @@ const Login = () => {
             >
               <div className="flex items-start space-x-2">
                 <FaShieldAlt className="flex-shrink-0 mt-0.5" />
-                <span className="break-all">
-                  {error.startsWith('NETWORK_ERROR:')
-                    ? 'Traffic service temporarily unavailable. The backend did not respond.'
-                    : error
-                  }
-                </span>
+                <span>{error}</span>
               </div>
-              {error.startsWith('NETWORK_ERROR:') && (
-                <div className="text-[11px] text-rose-300/70 font-mono bg-rose-950/30 rounded-lg px-3 py-2 break-all">
-                  Backend URL: {API_URL}
-                </div>
-              )}
-              {error.startsWith('NETWORK_ERROR:') && (
-                <button
-                  type="button"
-                  onClick={() => setError('')}
-                  className="flex items-center gap-1.5 text-[11px] text-rose-300 hover:text-white transition-colors font-bold"
-                >
-                  <FaRedo className="text-[9px]" /> Dismiss &amp; Retry
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setError('')}
+                className="flex items-center gap-1.5 text-[11px] text-rose-300 hover:text-white transition-colors font-bold"
+              >
+                <FaRedo className="text-[9px]" /> Dismiss
+              </button>
             </motion.div>
           )}
 
@@ -305,15 +331,20 @@ const Login = () => {
             <button
               type="submit"
               id="login-submit"
-              disabled={loading}
+              disabled={isDisabled}
               className="w-full py-4 bg-gradient-to-r from-primary-500 to-cyan-400 hover:from-primary-600 hover:to-cyan-500
                 font-bold rounded-2xl flex items-center justify-center space-x-2 text-sm shadow-xl shadow-primary-500/25
                 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
             >
               {loading ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  <span>Authenticating...</span>
+                  <FaSpinner className="animate-spin text-xs" />
+                  <span>Authenticating…</span>
+                </>
+              ) : wakingUp ? (
+                <>
+                  <FaSpinner className="animate-spin text-xs" />
+                  <span>Waiting for server…</span>
                 </>
               ) : (
                 <>
@@ -339,7 +370,7 @@ const Login = () => {
                 type="button"
                 id={`demo-login-${acc.label.toLowerCase()}`}
                 onClick={() => handleDemoLogin(acc)}
-                disabled={loading}
+                disabled={isDisabled}
                 className={`flex flex-col items-center justify-center p-3 rounded-2xl border border-slate-800
                   bg-slate-900/60 hover:border-slate-600 hover:bg-slate-800/60 transition-all disabled:opacity-50
                   group hover:scale-[1.03] active:scale-[0.97]`}

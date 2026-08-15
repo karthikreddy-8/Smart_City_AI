@@ -74,6 +74,8 @@ export const liveTrafficAPI = {
     }),
   getLocations: () => api.get('/live-traffic/locations'),
   getAreaQuery: (area, city, state, country, radiusKm = 1.5) => api.get('/live-traffic/area-query', { params: { area, city, state, country, radius_km: radiusKm } }),
+  getCascadingLocations: (params) => api.get('/live-traffic/cascading-locations', { params }),
+  getRoadDetails: (roadName, area, city) => api.get('/live-traffic/road-details', { params: { road_name: roadName, area, city } }),
 };
 
 
