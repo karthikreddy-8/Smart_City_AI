@@ -65,10 +65,13 @@ api.interceptors.response.use(
 // Pings the /health endpoint before login to detect if Render is sleeping.
 // Returns: 'online' | 'waking' | 'offline'
 export const checkBackendHealth = async () => {
-  const healthUrl = API_URL.replace(/\/api$/, '') + '/health';
+  const baseApi = API_URL.replace(/\/+$/, '');
+  const healthUrl = `${baseApi}/health`;
   try {
     const res = await axios.get(healthUrl, { timeout: 5000 });
-    if (res.status === 200) return 'online';
+    if (res.status === 200 && typeof res.data === 'object' && (res.data.Backend || res.data.status)) {
+      return 'online';
+    }
     return 'offline';
   } catch (err) {
     if (err.code === 'ECONNABORTED') return 'waking';  // timeout = sleeping
@@ -81,7 +84,9 @@ export const checkBackendHealth = async () => {
 // ── Wake backend with patience ─────────────────────────────────────────────────
 // Sends a /wake ping and waits up to 40s for the backend to respond.
 export const wakeBackend = async (onProgress) => {
-  const wakeUrl = API_URL.replace(/\/api$/, '') + '/wake';
+  const baseApi = API_URL.replace(/\/+$/, '');
+  const wakeUrl = `${baseApi}/wake`;
+  const healthUrl = `${baseApi}/health`;
   const maxWaitMs = 40000;
   const startTime = Date.now();
 
@@ -89,12 +94,11 @@ export const wakeBackend = async (onProgress) => {
   const tryPing = async () => {
     try {
       const res = await axios.get(wakeUrl, { timeout: 38000 });
-      if (res.status === 200) return true;
+      if (res.status === 200 && typeof res.data === 'object') return true;
     } catch {
       try {
-        const healthUrl = API_URL.replace(/\/api$/, '') + '/health';
         const res2 = await axios.get(healthUrl, { timeout: 38000 });
-        if (res2.status === 200) return true;
+        if (res2.status === 200 && typeof res2.data === 'object') return true;
       } catch {
         /* still waking */
       }

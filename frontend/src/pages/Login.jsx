@@ -371,6 +371,7 @@ const Login = () => {
                 id={`demo-login-${acc.label.toLowerCase()}`}
                 onClick={() => handleDemoLogin(acc)}
                 disabled={isDisabled}
+                title={`Email: ${acc.username}\nPassword: ${acc.password}`}
                 className={`flex flex-col items-center justify-center p-3 rounded-2xl border border-slate-800
                   bg-slate-900/60 hover:border-slate-600 hover:bg-slate-800/60 transition-all disabled:opacity-50
                   group hover:scale-[1.03] active:scale-[0.97]`}
@@ -379,7 +380,9 @@ const Login = () => {
                   {acc.icon}
                 </span>
                 <span className="text-[11px] font-bold text-slate-300">{acc.label}</span>
-                <span className="text-[9px] text-slate-600 group-hover:text-slate-500 transition-colors">Click to login</span>
+                <span className="text-[9px] text-slate-500 group-hover:text-slate-400 transition-colors font-mono mt-0.5">
+                  {acc.password}
+                </span>
               </button>
             ))}
           </div>

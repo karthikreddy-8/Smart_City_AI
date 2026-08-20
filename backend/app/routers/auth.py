@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
@@ -7,6 +8,7 @@ from app.schemas import UserCreate, UserResponse, Token
 from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -66,10 +68,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Username or email is required."
         )
 
-    # Look up by username first, then by email
-    user = db.query(User).filter(User.username == identifier).first()
+    # Look up by username first (case-insensitive), then by email (case-insensitive)
+    user = db.query(User).filter(func.lower(User.username) == identifier.lower()).first()
     if not user:
-        user = db.query(User).filter(User.email == identifier).first()
+        user = db.query(User).filter(func.lower(User.email) == identifier.lower()).first()
 
     # Generic error — do NOT reveal whether username or password was wrong
     if not user or not verify_password(form_data.password, user.hashed_password):
